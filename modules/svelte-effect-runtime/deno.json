@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "lib": ["deno.ns", "dom", "dom.iterable", "es2022"]
+  },
+  "tasks": {
+    "build": "deno task clean && deno run -A ../../build/runtime.ts && tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "check": "deno check --node-modules-dir=auto mod.ts client.ts preprocess.ts vite.ts test/*.test.ts",
+    "clean": "rm -rf dist",
+    "test": "deno test --node-modules-dir=auto -A",
+    "fmt": "deno fmt",
+    "lint": "deno lint"
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.15",
+    "@std/path": "jsr:@std/path@^1.1.2",
+    "svelte-effect-runtime": "./mod.ts",
+    "svelte-effect-runtime/client": "./client.ts",
+    "svelte-effect-runtime/preprocess": "./preprocess.ts",
+    "svelte-effect-runtime/vite": "./vite.ts",
+    "effect": "npm:effect@^3.21.0",
+    "effect/": "npm:/effect@^3.21.0/",
+    "svelte": "npm:svelte@^5.55.1",
+    "svelte/": "npm:/svelte@^5.55.1/",
+    "magic-string": "npm:magic-string@^0.30.21",
+    "typescript": "npm:typescript@^5.9.3",
+    "vite": "npm:vite@^7.3.1",
+    "@sveltejs/vite-plugin-svelte": "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
+    "@sveltejs/kit": "npm:@sveltejs/kit@^2.56.1",
+    "@sveltejs/kit/": "npm:/@sveltejs/kit@^2.56.1/",
+    "@sveltejs/adapter-static": "npm:@sveltejs/adapter-static@^3.0.10",
+    "jsdom": "npm:jsdom@^26.1.0"
+  }
+}

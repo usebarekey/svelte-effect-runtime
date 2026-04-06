@@ -1,0 +1,10 @@
+{
+  "deno.enable": true,
+  "deno.enablePaths": [
+    "app",
+    "build",
+    "modules"
+  ],
+  "svelte.language-server.ls-path": "/home/sander/.cursor-server/extensions/sander.svelte-effect-runtime-vscode-0.0.1/server.cjs",
+  "svelte-effect-runtime.languageServer.autoConfigure": true
+}

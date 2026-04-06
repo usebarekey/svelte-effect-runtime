@@ -1,0 +1,39 @@
+{
+  "workspace": [
+    "./modules/svelte-effect-runtime",
+    "./modules/svelte-effect-runtime-language-server",
+    "./modules/svelte-effect-runtime-vscode-extension"
+  ],
+  "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.15",
+    "@std/fs": "jsr:@std/fs@^1.0.19",
+    "@std/path": "jsr:@std/path@^1.1.2",
+    "rolldown": "npm:rolldown@^1.0.0-rc.13"
+  },
+  "lint": {
+    "exclude": [
+      "**/dist/**",
+      "**/runtime/**",
+      "**/.tmp/**",
+      "**/test/fixtures/**/build/**",
+      "**/node_modules/**",
+      "**/.svelte-kit/**",
+      "**/.vercel/**",
+      "**/*.vsix"
+    ]
+  },
+  "nodeModulesDir": "auto",
+  "tasks": {
+    "build": "deno task build:runtime && deno task build:lsp && deno task build:extension",
+    "build:runtime": "cd modules/svelte-effect-runtime && deno task build",
+    "build:lsp": "cd modules/svelte-effect-runtime-language-server && deno task build",
+    "build:extension": "cd modules/svelte-effect-runtime-vscode-extension && deno task build",
+    "check": "deno task check:runtime",
+    "check:runtime": "cd modules/svelte-effect-runtime && deno task check",
+    "lint": "deno lint",
+    "package:extension": "cd modules/svelte-effect-runtime-vscode-extension && deno task package",
+    "test": "deno task test:runtime && deno task test:lsp",
+    "test:lsp": "cd modules/svelte-effect-runtime-language-server && deno task test",
+    "test:runtime": "cd modules/svelte-effect-runtime && deno task test"
+  }
+}

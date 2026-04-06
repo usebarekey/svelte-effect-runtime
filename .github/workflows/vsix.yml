@@ -1,0 +1,91 @@
+name: vsix
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - modules/svelte-effect-runtime-vscode-extension/package.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vsix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect_version_bump:
+    runs-on: ubuntu-latest
+
+    outputs:
+      has_version_bump: ${{ steps.detect.outputs.has_version_bump }}
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: detect_version_bump
+        id: detect
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "has_version_bump=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --unified=0 "${{ github.event.before }}" "${{ github.sha }}" -- modules/svelte-effect-runtime-vscode-extension/package.json | grep -Eq '^[+-][[:space:]]*"version":[[:space:]]*"'; then
+            echo "has_version_bump=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_version_bump=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  lint_and_test:
+    needs: detect_version_bump
+    if: needs.detect_version_bump.outputs.has_version_bump == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup_deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: lint
+        run: deno task lint
+
+      - name: test_lsp
+        run: deno task test:lsp
+
+  package_vsix:
+    needs:
+      - detect_version_bump
+      - lint_and_test
+    if: needs.detect_version_bump.outputs.has_version_bump == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup_deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: package_vsix
+        working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime-vscode-extension
+        run: deno task package
+
+      - name: upload_vsix
+        uses: actions/upload-artifact@v4
+        with:
+          name: svelte-effect-runtime-vscode
+          path: modules/svelte-effect-runtime-vscode-extension/*.vsix
+          if-no-files-found: error

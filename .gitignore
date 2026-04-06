@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+**/.svelte-kit
+**/.vercel
+coverage
+.DS_Store
+modules/svelte-effect-runtime/dist
+modules/svelte-effect-runtime/.tmp
+modules/svelte-effect-runtime-language-server/dist
+modules/svelte-effect-runtime-language-server/runtime
+modules/svelte-effect-runtime-vscode-extension/dist
+modules/svelte-effect-runtime-vscode-extension/runtime
+modules/svelte-effect-runtime-vscode-extension/*.vsix
+modules/svelte-effect-runtime/test/fixtures/*/dist
+modules/svelte-effect-runtime/test/fixtures/*/build
+modules/svelte-effect-runtime/test/fixtures/*/.svelte-kit
+*.tsbuildinfo

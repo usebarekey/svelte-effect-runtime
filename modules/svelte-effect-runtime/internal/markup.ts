@@ -1,0 +1,1420 @@
+import MagicString, { type SourceMap } from "magic-string";
+import { parse, type AST } from "svelte/compiler";
+import ts from "typescript";
+import type { EffectPreprocessOptions } from "../preprocess.ts";
+
+const DEFAULT_RUNTIME_MODULE_ID = "svelte-effect-runtime/client";
+const DEFAULT_EFFECT_MODULE_ID = "effect";
+const DEFAULT_SVELTE_MODULE_ID = "svelte";
+const MARKUP_HELPER_PREFIX = "__svelteEffectRuntimeMarkup";
+
+interface TransformEffectMarkupOptions extends EffectPreprocessOptions {
+  filename: string;
+}
+
+interface TransformEffectMarkupResult {
+  code: string;
+  map: SourceMap;
+}
+
+interface ExcludedRange {
+  start: number;
+  end: number;
+}
+
+interface Replacement {
+  start: number;
+  end: number;
+  text: string;
+}
+
+interface MarkupCandidate {
+  expressionText: string;
+  placeholder: string;
+  start: number;
+  end: number;
+}
+
+interface WrappedExpression {
+  expression: ts.Expression;
+  offset: number;
+  sourceFile: ts.SourceFile;
+}
+
+export function transformEffectMarkup(
+  content: string,
+  options: TransformEffectMarkupOptions,
+): TransformEffectMarkupResult {
+  const sanitized = sanitizeEffectMarkup(
+    content,
+    options.filename,
+  );
+
+  if (sanitized.candidates.length === 0) {
+    const identity = new MagicString(content);
+    return {
+      code: content,
+      map: identity.generateMap({
+        hires: true,
+        includeContent: true,
+        source: options.filename,
+      }),
+    };
+  }
+
+  const replacements = collectMarkupReplacements(
+    sanitized.code,
+    sanitized.candidates,
+    options.filename,
+  );
+
+  const magicString = new MagicString(content);
+
+  for (const replacement of replacements) {
+    magicString.overwrite(replacement.start, replacement.end, replacement.text);
+  }
+
+  injectMarkupHelpers(magicString, content, options);
+
+  return {
+    code: magicString.toString(),
+    map: magicString.generateMap({
+      hires: true,
+      includeContent: true,
+      source: options.filename,
+    }),
+  };
+}
+
+function sanitizeEffectMarkup(
+  content: string,
+  filename: string,
+): { code: string; candidates: MarkupCandidate[] } {
+  const excludedRanges = findExcludedRanges(content);
+  const candidates: MarkupCandidate[] = [];
+  const magicString = new MagicString(content);
+  let helperIndex = 0;
+
+  for (let index = 0; index < content.length; index += 1) {
+    if (content[index] !== "{") {
+      continue;
+    }
+
+    const range = findExcludedRangeAt(excludedRanges, index);
+
+    if (range) {
+      index = range.end - 1;
+      continue;
+    }
+
+    const closingIndex = findClosingBrace(content, index + 1);
+
+    if (closingIndex === -1) {
+      continue;
+    }
+
+    const inner = content.slice(index + 1, closingIndex);
+    const candidate = getCandidateForBraceTag(
+      index,
+      closingIndex,
+      inner,
+      filename,
+      helperIndex,
+    );
+
+    if (candidate) {
+      helperIndex += 1;
+      candidates.push(candidate);
+      magicString.overwrite(
+        candidate.start,
+        candidate.end,
+        candidate.placeholder,
+      );
+    }
+
+    index = closingIndex;
+  }
+
+  return {
+    code: magicString.toString(),
+    candidates,
+  };
+}
+
+function collectMarkupReplacements(
+  sanitizedContent: string,
+  candidates: readonly MarkupCandidate[],
+  filename: string,
+): Replacement[] {
+  const ast = parse(sanitizedContent, {
+    filename,
+    modern: true,
+  });
+  const candidatesByPlaceholder = new Map(
+    candidates.map((candidate) => [candidate.placeholder, candidate]),
+  );
+  const replacements: Replacement[] = [];
+  const matchedPlaceholders = new Set<string>();
+
+  visitFragment(ast.fragment, candidatesByPlaceholder, matchedPlaceholders, (
+    candidate,
+    kind,
+  ) => {
+    replacements.push(makeAstReplacement(candidate, kind, filename));
+  });
+
+  const unmatched = candidates.filter((candidate) =>
+    !matchedPlaceholders.has(candidate.placeholder)
+  );
+
+  if (unmatched.length > 0) {
+    throw new Error(
+      `${filename}: failed to classify some markup Effect expressions.\n` +
+        unmatched.map((candidate) =>
+          `Problematic expression:\n${candidate.expressionText}`
+        ).join("\n\n"),
+    );
+  }
+
+  return replacements.sort((left, right) => left.start - right.start);
+}
+
+function getCandidateForBraceTag(
+  openBraceIndex: number,
+  closeBraceIndex: number,
+  inner: string,
+  filename: string,
+  helperIndex: number,
+): MarkupCandidate | undefined {
+  const trimmed = inner.trimStart();
+  const leadingWhitespaceLength = inner.length - trimmed.length;
+
+  if (!containsYieldStarText(trimmed)) {
+    return undefined;
+  }
+
+  if (trimmed.startsWith("@const ")) {
+    const initializerRange = findConstInitializerRange(
+      trimmed.slice("@const ".length),
+      filename,
+    );
+
+    return initializerRange
+      ? makeMarkupCandidate(
+        openBraceIndex + 1 + leadingWhitespaceLength + "@const ".length +
+          initializerRange.start,
+        openBraceIndex + 1 + leadingWhitespaceLength + "@const ".length +
+          initializerRange.end,
+        trimmed.slice("@const ".length + initializerRange.start,
+          "@const ".length + initializerRange.end),
+        helperIndex,
+      )
+      : undefined;
+  }
+
+  if (trimmed.startsWith("#if ")) {
+    return makeMarkupCandidate(
+      openBraceIndex + 1 + leadingWhitespaceLength + "#if ".length,
+      closeBraceIndex,
+      trimmed.slice("#if ".length),
+      helperIndex,
+    );
+  }
+
+  if (trimmed.startsWith(":else if ")) {
+    return makeMarkupCandidate(
+      openBraceIndex + 1 + leadingWhitespaceLength + ":else if ".length,
+      closeBraceIndex,
+      trimmed.slice(":else if ".length),
+      helperIndex,
+    );
+  }
+
+  if (trimmed.startsWith("#each ")) {
+    const eachHeader = trimmed.slice("#each ".length);
+    const asIndex = findTopLevelKeyword(eachHeader, " as ");
+
+    if (asIndex === -1) {
+      return undefined;
+    }
+
+    const listExpression = eachHeader.slice(0, asIndex);
+
+    return makeMarkupCandidate(
+      openBraceIndex + 1 + leadingWhitespaceLength + "#each ".length,
+      openBraceIndex + 1 + leadingWhitespaceLength + "#each ".length +
+        listExpression.length,
+      listExpression,
+      helperIndex,
+    );
+  }
+
+  if (trimmed.startsWith("#await ")) {
+    const awaitHeader = trimmed.slice("#await ".length);
+    const boundary = findAwaitBoundary(awaitHeader);
+    const expressionText = boundary === -1
+      ? awaitHeader
+      : awaitHeader.slice(0, boundary);
+
+    return makeMarkupCandidate(
+      openBraceIndex + 1 + leadingWhitespaceLength + "#await ".length,
+      openBraceIndex + 1 + leadingWhitespaceLength + "#await ".length +
+        expressionText.length,
+      expressionText,
+      helperIndex,
+    );
+  }
+
+  if (trimmed.startsWith("@html ")) {
+    return makeMarkupCandidate(
+      openBraceIndex + 1 + leadingWhitespaceLength + "@html ".length,
+      closeBraceIndex,
+      trimmed.slice("@html ".length),
+      helperIndex,
+    );
+  }
+
+  if (trimmed.startsWith("@render ")) {
+    throw new Error(
+      `${filename}: {@render ...} cannot depend on yield* in markup right now.\nMove the Effect code into <script effect> or a helper function instead.\n\nProblematic tag:\n{${inner}}`,
+    );
+  }
+
+  if (trimmed.startsWith("@attach ")) {
+    return makeMarkupCandidate(
+      openBraceIndex + 1 + leadingWhitespaceLength + "@attach ".length,
+      closeBraceIndex,
+      trimmed.slice("@attach ".length),
+      helperIndex,
+    );
+  }
+
+  if (trimmed.startsWith("#key ")) {
+    return makeMarkupCandidate(
+      openBraceIndex + 1 + leadingWhitespaceLength + "#key ".length,
+      closeBraceIndex,
+      trimmed.slice("#key ".length),
+      helperIndex,
+    );
+  }
+
+  if (
+    trimmed.startsWith("/") || trimmed.startsWith(":then") ||
+    trimmed.startsWith(":catch") || trimmed === ":else"
+  ) {
+    return undefined;
+  }
+
+  if (trimmed.startsWith("...")) {
+    return makeMarkupCandidate(
+      openBraceIndex + 1 + leadingWhitespaceLength + "...".length,
+      closeBraceIndex,
+      trimmed.slice("...".length),
+      helperIndex,
+    );
+  }
+
+  return makeMarkupCandidate(
+    openBraceIndex + 1,
+    closeBraceIndex,
+    inner,
+    helperIndex,
+  );
+}
+
+function makeMarkupCandidate(
+  start: number,
+  end: number,
+  expressionText: string,
+  helperIndex: number,
+): MarkupCandidate {
+  const placeholder = `${MARKUP_HELPER_PREFIX}Placeholder${helperIndex}`;
+
+  return {
+    expressionText,
+    placeholder,
+    start,
+    end,
+  };
+}
+
+function makeAstReplacement(
+  candidate: MarkupCandidate,
+  kind: "plain" | "each" | "await" | "event",
+  filename: string,
+): Replacement {
+  if (kind === "event") {
+    return {
+      start: candidate.start,
+      end: candidate.end,
+      text: transformEventExpression(candidate.expressionText.trim(), filename),
+    };
+  }
+
+  const helperId = `${MARKUP_HELPER_PREFIX}${candidate.placeholder}`;
+  const deps = collectFreeIdentifiers(candidate.expressionText, filename);
+  const depsText = deps.length === 0 ? "[]" : `[${deps.join(", ")}]`;
+  const trimmedExpression = candidate.expressionText.trim();
+
+  const replacementText = kind === "await"
+    ? `${MARKUP_HELPER_PREFIX}Promise("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); })`
+    : `${MARKUP_HELPER_PREFIX}Value("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); }, ${
+      kind === "each" ? "[]" : "undefined"
+    })`;
+
+  return {
+    start: candidate.start,
+    end: candidate.end,
+    text: replacementText,
+  };
+}
+
+function visitFragment(
+  fragment: AST.Fragment,
+  candidatesByPlaceholder: ReadonlyMap<string, MarkupCandidate>,
+  matchedPlaceholders: Set<string>,
+  onReplacement: (
+    candidate: MarkupCandidate,
+    kind: "plain" | "each" | "await" | "event",
+  ) => void,
+): void {
+  for (const node of fragment.nodes) {
+    visitNode(node, candidatesByPlaceholder, matchedPlaceholders, onReplacement);
+  }
+}
+
+function visitNode(
+  node: AST.Fragment["nodes"][number],
+  candidatesByPlaceholder: ReadonlyMap<string, MarkupCandidate>,
+  matchedPlaceholders: Set<string>,
+  onReplacement: (
+    candidate: MarkupCandidate,
+    kind: "plain" | "each" | "await" | "event",
+  ) => void,
+): void {
+  switch (node.type) {
+    case "ExpressionTag":
+    case "HtmlTag":
+    case "AttachTag":
+      emitReplacementForExpression(
+        node.expression,
+        "plain",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      return;
+
+    case "ConstTag":
+      emitReplacementForExpression(
+        node.declaration.declarations[0]?.init,
+        "plain",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      return;
+
+    case "IfBlock":
+      emitReplacementForExpression(
+        node.test,
+        "plain",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      visitFragment(
+        node.consequent,
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      if (node.alternate) {
+        visitFragment(
+          node.alternate,
+          candidatesByPlaceholder,
+          matchedPlaceholders,
+          onReplacement,
+        );
+      }
+      return;
+
+    case "EachBlock":
+      emitReplacementForExpression(
+        node.expression,
+        "each",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      visitFragment(
+        node.body,
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      if (node.fallback) {
+        visitFragment(
+          node.fallback,
+          candidatesByPlaceholder,
+          matchedPlaceholders,
+          onReplacement,
+        );
+      }
+      return;
+
+    case "AwaitBlock":
+      emitReplacementForExpression(
+        node.expression,
+        "await",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      if (node.pending) {
+        visitFragment(
+          node.pending,
+          candidatesByPlaceholder,
+          matchedPlaceholders,
+          onReplacement,
+        );
+      }
+      if (node.then) {
+        visitFragment(
+          node.then,
+          candidatesByPlaceholder,
+          matchedPlaceholders,
+          onReplacement,
+        );
+      }
+      if (node.catch) {
+        visitFragment(
+          node.catch,
+          candidatesByPlaceholder,
+          matchedPlaceholders,
+          onReplacement,
+        );
+      }
+      return;
+
+    case "KeyBlock":
+      emitReplacementForExpression(
+        node.expression,
+        "plain",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      visitFragment(
+        node.fragment,
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      return;
+
+    case "RegularElement":
+    case "Component":
+    case "TitleElement":
+    case "SlotElement":
+    case "SvelteBody":
+    case "SvelteBoundary":
+    case "SvelteComponent":
+    case "SvelteDocument":
+    case "SvelteElement":
+    case "SvelteFragment":
+    case "SvelteHead":
+    case "SvelteSelf":
+    case "SvelteWindow":
+      for (const attribute of node.attributes) {
+        visitAttribute(
+          attribute,
+          candidatesByPlaceholder,
+          matchedPlaceholders,
+          onReplacement,
+        );
+      }
+      visitFragment(
+        node.fragment,
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      return;
+
+    default:
+      return;
+  }
+}
+
+function visitAttribute(
+  attribute: AST.BaseElement["attributes"][number],
+  candidatesByPlaceholder: ReadonlyMap<string, MarkupCandidate>,
+  matchedPlaceholders: Set<string>,
+  onReplacement: (
+    candidate: MarkupCandidate,
+    kind: "plain" | "each" | "await" | "event",
+  ) => void,
+): void {
+  switch (attribute.type) {
+    case "Attribute": {
+      const kind = isEventAttribute(attribute.name) ? "event" : "plain";
+      visitAttributeValue(
+        attribute.value,
+        kind,
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      return;
+    }
+
+    case "OnDirective":
+      emitReplacementForExpression(
+        attribute.expression,
+        "event",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      return;
+
+    case "SpreadAttribute":
+    case "AnimateDirective":
+    case "BindDirective":
+    case "ClassDirective":
+    case "TransitionDirective":
+    case "UseDirective":
+      emitReplacementForExpression(
+        attribute.expression,
+        "plain",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      return;
+
+    case "StyleDirective":
+      visitAttributeValue(
+        attribute.value,
+        "plain",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      return;
+
+    case "LetDirective":
+      emitReplacementForExpression(
+        attribute.expression,
+        "plain",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      return;
+
+    default:
+      return;
+  }
+}
+
+function visitAttributeValue(
+  value:
+    | true
+    | AST.ExpressionTag
+    | Array<AST.Text | AST.ExpressionTag>,
+  kind: "plain" | "each" | "await" | "event",
+  candidatesByPlaceholder: ReadonlyMap<string, MarkupCandidate>,
+  matchedPlaceholders: Set<string>,
+  onReplacement: (
+    candidate: MarkupCandidate,
+    kind: "plain" | "each" | "await" | "event",
+  ) => void,
+): void {
+  if (value === true) {
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const part of value) {
+      if (part.type === "ExpressionTag") {
+        emitReplacementForExpression(
+          part.expression,
+          kind,
+          candidatesByPlaceholder,
+          matchedPlaceholders,
+          onReplacement,
+        );
+      }
+    }
+    return;
+  }
+
+  emitReplacementForExpression(
+    value.expression,
+    kind,
+    candidatesByPlaceholder,
+    matchedPlaceholders,
+    onReplacement,
+  );
+}
+
+function emitReplacementForExpression(
+  expression: { type: string; name?: string } | null | undefined,
+  kind: "plain" | "each" | "await" | "event",
+  candidatesByPlaceholder: ReadonlyMap<string, MarkupCandidate>,
+  matchedPlaceholders: Set<string>,
+  onReplacement: (
+    candidate: MarkupCandidate,
+    kind: "plain" | "each" | "await" | "event",
+  ) => void,
+): void {
+  if (!expression || expression.type !== "Identifier" || !expression.name) {
+    return;
+  }
+
+  const candidate = candidatesByPlaceholder.get(expression.name);
+
+  if (!candidate || matchedPlaceholders.has(candidate.placeholder)) {
+    return;
+  }
+
+  matchedPlaceholders.add(candidate.placeholder);
+  onReplacement(candidate, kind);
+}
+
+function findConstInitializerRange(
+  declarationText: string,
+  filename: string,
+): { start: number; end: number } | undefined {
+  const sourceFile = ts.createSourceFile(
+    filename,
+    `const ${declarationText};`,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const statement = sourceFile.statements[0];
+
+  if (!statement || !ts.isVariableStatement(statement)) {
+    return undefined;
+  }
+
+  const declaration = statement.declarationList.declarations[0];
+
+  if (!declaration?.initializer) {
+    return undefined;
+  }
+
+  return {
+    start: declaration.initializer.getStart(sourceFile) - "const ".length,
+    end: declaration.initializer.end - "const ".length,
+  };
+}
+
+function transformEventExpression(
+  expressionText: string,
+  filename: string,
+): string {
+  const wrapped = parseWrappedExpression(expressionText, filename);
+  const expression = unwrapParentheses(wrapped.expression);
+
+  if (ts.isArrowFunction(expression)) {
+    const signatureText = sliceWrappedNode(
+      expressionText,
+      wrapped,
+      expression.getStart(wrapped.sourceFile),
+      expression.equalsGreaterThanToken.end,
+    );
+
+    if (ts.isBlock(expression.body)) {
+      return `${signatureText} ${
+        makeInlineEventBlock(
+          sliceWrappedNode(
+            expressionText,
+            wrapped,
+            expression.body.getStart(wrapped.sourceFile) + 1,
+            expression.body.end - 1,
+          ),
+        )
+      }`;
+    }
+
+    return `${signatureText} ${
+      makeInlineEventExpressionBody(
+        sliceWrappedNode(
+          expressionText,
+          wrapped,
+          expression.body.getStart(wrapped.sourceFile),
+          expression.body.end,
+        ),
+      )
+    }`;
+  }
+
+  if (ts.isFunctionExpression(expression)) {
+    const signatureText = sliceWrappedNode(
+      expressionText,
+      wrapped,
+      expression.getStart(wrapped.sourceFile),
+      expression.body.getStart(wrapped.sourceFile),
+    );
+    const bodyText = sliceWrappedNode(
+      expressionText,
+      wrapped,
+      expression.body.getStart(wrapped.sourceFile) + 1,
+      expression.body.end - 1,
+    );
+
+    return `${signatureText}${makeInlineEventBlock(bodyText)}`;
+  }
+
+  return `() => ${makeInlineEventExpressionBody(expressionText)}`;
+}
+
+function makeInlineEventBlock(bodyText: string): string {
+  const normalizedBody = bodyText.trim();
+
+  if (normalizedBody.length === 0) {
+    return `{ void ${MARKUP_HELPER_PREFIX}Run(function* () {}); }`;
+  }
+
+  return [
+    "{",
+    `  void ${MARKUP_HELPER_PREFIX}Run(function* () {`,
+    indentBlock(normalizedBody, "    "),
+    "  });",
+    "}",
+  ].join("\n");
+}
+
+function makeInlineEventExpressionBody(expressionText: string): string {
+  return [
+    "{",
+    `  void ${MARKUP_HELPER_PREFIX}Run(function* () {`,
+    `    return (${expressionText.trim()});`,
+    "  });",
+    "}",
+  ].join("\n");
+}
+
+function parseWrappedExpression(
+  expressionText: string,
+  filename: string,
+): WrappedExpression {
+  const prefix = "function* __svelteEffectRuntimeMarkupWrapper(){ return (";
+  const sourceFile = ts.createSourceFile(
+    filename,
+    `${prefix}${expressionText}); }`,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const functionDeclaration = sourceFile.statements[0];
+
+  if (
+    !functionDeclaration || !ts.isFunctionDeclaration(functionDeclaration) ||
+    !functionDeclaration.body
+  ) {
+    throw new Error(
+      `${filename}: could not parse markup Effect expression:\n${expressionText}`,
+    );
+  }
+
+  const returnStatement = functionDeclaration.body.statements[0];
+
+  if (
+    !returnStatement || !ts.isReturnStatement(returnStatement) ||
+    !returnStatement.expression
+  ) {
+    throw new Error(
+      `${filename}: could not locate markup Effect expression:\n${expressionText}`,
+    );
+  }
+
+  return {
+    expression: returnStatement.expression,
+    offset: prefix.length,
+    sourceFile,
+  };
+}
+
+function unwrapParentheses(expression: ts.Expression): ts.Expression {
+  let current = expression;
+
+  while (ts.isParenthesizedExpression(current)) {
+    current = current.expression;
+  }
+
+  return current;
+}
+
+function sliceWrappedNode(
+  expressionText: string,
+  wrapped: WrappedExpression,
+  start: number,
+  end: number,
+): string {
+  return expressionText.slice(start - wrapped.offset, end - wrapped.offset);
+}
+
+function collectFreeIdentifiers(
+  expressionText: string,
+  filename: string,
+): string[] {
+  const wrapped = parseWrappedExpression(expressionText, filename);
+  const identifiers: string[] = [];
+  const seen = new Set<string>();
+  const scopes: Array<Set<string>> = [new Set()];
+
+  function isDeclaredLocally(identifier: string): boolean {
+    return scopes.some((scope) => scope.has(identifier));
+  }
+
+  function visit(node: ts.Node): void {
+    if (
+      ts.isFunctionExpression(node) || ts.isArrowFunction(node) ||
+      ts.isFunctionDeclaration(node)
+    ) {
+      if (!node.body) {
+        return;
+      }
+
+      const nextScope = new Set<string>();
+
+      if (node.name) {
+        nextScope.add(node.name.text);
+      }
+
+      for (const parameter of node.parameters) {
+        declareInto(nextScope, parameter.name);
+      }
+
+      scopes.unshift(nextScope);
+
+      if (ts.isBlock(node.body)) {
+        for (const statement of node.body.statements) {
+          statement.forEachChild(visit);
+        }
+      } else {
+        node.body.forEachChild(visit);
+      }
+
+      scopes.shift();
+      return;
+    }
+
+    if (ts.isIdentifier(node)) {
+      if (node.text === "yield" || node.text === "undefined") {
+        return;
+      }
+
+      if (shouldSkipIdentifier(node)) {
+        return;
+      }
+
+      if (!isDeclaredLocally(node.text) && !seen.has(node.text)) {
+        seen.add(node.text);
+        identifiers.push(node.text);
+      }
+    }
+
+    if (ts.isVariableDeclaration(node)) {
+      if (node.initializer) {
+        node.initializer.forEachChild(visit);
+      }
+      return;
+    }
+
+    node.forEachChild(visit);
+  }
+
+  function declareInto(scope: Set<string>, name: ts.BindingName): void {
+    if (ts.isIdentifier(name)) {
+      scope.add(name.text);
+      return;
+    }
+
+    for (const element of name.elements) {
+      if (ts.isOmittedExpression(element)) {
+        continue;
+      }
+
+      declareInto(scope, element.name);
+    }
+  }
+
+  visit(unwrapParentheses(wrapped.expression));
+  return identifiers;
+}
+
+function shouldSkipIdentifier(node: ts.Identifier): boolean {
+  const parent = node.parent;
+
+  return ts.isPropertyAccessExpression(parent) && parent.name === node ||
+    ts.isPropertyAssignment(parent) && parent.name === node ||
+    ts.isShorthandPropertyAssignment(parent) &&
+      parent.objectAssignmentInitializer === node ||
+    ts.isBindingElement(parent) && parent.propertyName === node ||
+    ts.isImportSpecifier(parent) ||
+    ts.isExportSpecifier(parent) ||
+    ts.isLabeledStatement(parent) && parent.label === node;
+}
+
+function containsYieldStarText(text: string): boolean {
+  return /\byield\s*\*/.test(text);
+}
+
+function findExcludedRanges(content: string): ExcludedRange[] {
+  const ranges: ExcludedRange[] = [];
+  const patterns = [
+    /<script\b[\s\S]*?<\/script\s*>/gi,
+    /<style\b[\s\S]*?<\/style\s*>/gi,
+    /<!--[\s\S]*?-->/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of content.matchAll(pattern)) {
+      if (match.index === undefined) {
+        continue;
+      }
+
+      ranges.push({
+        start: match.index,
+        end: match.index + match[0].length,
+      });
+    }
+  }
+
+  return ranges.sort((left, right) => left.start - right.start);
+}
+
+function findExcludedRangeAt(
+  ranges: ExcludedRange[],
+  index: number,
+): ExcludedRange | undefined {
+  return ranges.find((range) => range.start <= index && index < range.end);
+}
+
+function findClosingBrace(content: string, start: number): number {
+  let braceDepth = 0;
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  let quote: "'" | '"' | "`" | undefined;
+  let templateBraceDepth = 0;
+
+  for (let index = start; index < content.length; index += 1) {
+    const character = content[index];
+    const nextCharacter = content[index + 1];
+
+    if (quote === "'") {
+      if (character === "\\" && nextCharacter) {
+        index += 1;
+        continue;
+      }
+
+      if (character === "'") {
+        quote = undefined;
+      }
+
+      continue;
+    }
+
+    if (quote === '"') {
+      if (character === "\\" && nextCharacter) {
+        index += 1;
+        continue;
+      }
+
+      if (character === '"') {
+        quote = undefined;
+      }
+
+      continue;
+    }
+
+    if (quote === "`") {
+      if (character === "\\" && nextCharacter) {
+        index += 1;
+        continue;
+      }
+
+      if (character === "$" && nextCharacter === "{") {
+        templateBraceDepth += 1;
+        braceDepth += 1;
+        index += 1;
+        continue;
+      }
+
+      if (character === "}" && templateBraceDepth > 0) {
+        templateBraceDepth -= 1;
+        braceDepth -= 1;
+        continue;
+      }
+
+      if (character === "`" && templateBraceDepth === 0) {
+        quote = undefined;
+      }
+
+      continue;
+    }
+
+    if (character === "'" || character === '"' || character === "`") {
+      quote = character;
+      continue;
+    }
+
+    if (character === "/" && nextCharacter === "/") {
+      index += 2;
+
+      while (index < content.length && content[index] !== "\n") {
+        index += 1;
+      }
+
+      continue;
+    }
+
+    if (character === "/" && nextCharacter === "*") {
+      index += 2;
+
+      while (
+        index < content.length &&
+        !(content[index] === "*" && content[index + 1] === "/")
+      ) {
+        index += 1;
+      }
+
+      index += 1;
+      continue;
+    }
+
+    if (character === "(") {
+      parenDepth += 1;
+      continue;
+    }
+
+    if (character === ")") {
+      parenDepth -= 1;
+      continue;
+    }
+
+    if (character === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+
+    if (character === "]") {
+      bracketDepth -= 1;
+      continue;
+    }
+
+    if (character === "{") {
+      braceDepth += 1;
+      continue;
+    }
+
+    if (character === "}") {
+      if (braceDepth === 0 && parenDepth === 0 && bracketDepth === 0) {
+        return index;
+      }
+
+      braceDepth -= 1;
+    }
+  }
+
+  return -1;
+}
+
+function findTopLevelKeyword(text: string, keyword: string): number {
+  let braceDepth = 0;
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  let quote: "'" | '"' | "`" | undefined;
+
+  for (let index = 0; index <= text.length - keyword.length; index += 1) {
+    const character = text[index];
+    const nextCharacter = text[index + 1];
+
+    if (quote) {
+      if (character === "\\" && nextCharacter) {
+        index += 1;
+        continue;
+      }
+
+      if (character === quote) {
+        quote = undefined;
+      }
+
+      continue;
+    }
+
+    if (character === "'" || character === '"' || character === "`") {
+      quote = character;
+      continue;
+    }
+
+    if (character === "(") {
+      parenDepth += 1;
+      continue;
+    }
+
+    if (character === ")") {
+      parenDepth -= 1;
+      continue;
+    }
+
+    if (character === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+
+    if (character === "]") {
+      bracketDepth -= 1;
+      continue;
+    }
+
+    if (character === "{") {
+      braceDepth += 1;
+      continue;
+    }
+
+    if (character === "}") {
+      braceDepth -= 1;
+      continue;
+    }
+
+    if (
+      braceDepth === 0 && bracketDepth === 0 && parenDepth === 0 &&
+      text.startsWith(keyword, index)
+    ) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function findAwaitBoundary(text: string): number {
+  const thenIndex = findTopLevelKeyword(text, " then ");
+  const catchIndex = findTopLevelKeyword(text, " catch ");
+
+  if (thenIndex === -1) {
+    return catchIndex;
+  }
+
+  if (catchIndex === -1) {
+    return thenIndex;
+  }
+
+  return Math.min(thenIndex, catchIndex);
+}
+
+
+function isEventAttribute(name: string): boolean {
+  return name.startsWith("on:") ||
+    /^on[a-z]/.test(name);
+}
+
+function injectMarkupHelpers(
+  magicString: MagicString,
+  content: string,
+  options: TransformEffectMarkupOptions,
+): void {
+  const helperBlock = makeMarkupHelperBlock(options);
+  const scriptTagMatch = findInstanceScriptTag(content);
+
+  if (!scriptTagMatch) {
+    magicString.prepend(`<script>\n${helperBlock}\n</script>\n\n`);
+    return;
+  }
+
+  magicString.appendLeft(scriptTagMatch.end, `\n${helperBlock}\n`);
+}
+
+function findInstanceScriptTag(content: string): ExcludedRange | undefined {
+  const pattern = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+
+  for (const match of content.matchAll(pattern)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    const attributes = match[1] ?? "";
+
+    if (
+      /\bcontext\s*=\s*["']module["']/.test(attributes) ||
+      /\bmodule\b/.test(attributes)
+    ) {
+      continue;
+    }
+
+    const openTag = match[0].indexOf(">") + 1;
+
+    return {
+      start: match.index + openTag,
+      end: match.index + match[0].length - "</script>".length,
+    };
+  }
+
+  return undefined;
+}
+
+function makeMarkupHelperBlock(
+  options: TransformEffectMarkupOptions,
+): string {
+  const runtimeModuleId = options.runtimeModuleId ?? DEFAULT_RUNTIME_MODULE_ID;
+  const effectModuleId = options.effectModuleId ?? DEFAULT_EFFECT_MODULE_ID;
+  const svelteModuleId = options.svelteModuleId ?? DEFAULT_SVELTE_MODULE_ID;
+
+  return [
+    `import { Effect as ${MARKUP_HELPER_PREFIX}Effect } from "${effectModuleId}";`,
+    `import { onDestroy as ${MARKUP_HELPER_PREFIX}OnDestroy } from "${svelteModuleId}";`,
+    `import { getEffectRuntimeOrThrow as ${MARKUP_HELPER_PREFIX}GetRuntime, registerHotDispose as ${MARKUP_HELPER_PREFIX}RegisterHotDispose, runComponentEffect as ${MARKUP_HELPER_PREFIX}RunComponentEffect, runInlineEffect as ${MARKUP_HELPER_PREFIX}RunInlineEffect } from "${runtimeModuleId}";`,
+    "",
+    `const ${MARKUP_HELPER_PREFIX}Values = Object.create(null);`,
+    `const ${MARKUP_HELPER_PREFIX}Promises = Object.create(null);`,
+    `const ${MARKUP_HELPER_PREFIX}Cleanups = new Map();`,
+    `const ${MARKUP_HELPER_PREFIX}ObjectIds = new WeakMap();`,
+    `const ${MARKUP_HELPER_PREFIX}PendingStarts = new Set();`,
+    `const ${MARKUP_HELPER_PREFIX}Runtime = typeof window === "undefined" ? undefined : ${MARKUP_HELPER_PREFIX}GetRuntime();`,
+    `let ${MARKUP_HELPER_PREFIX}Version = $state(0);`,
+    `let ${MARKUP_HELPER_PREFIX}NextObjectId = 1;`,
+    "",
+    `function ${MARKUP_HELPER_PREFIX}Hash(value) {`,
+    `  if (value === null) {`,
+    `    return "null";`,
+    "  }",
+    "",
+    `  if (value === undefined) {`,
+    `    return "undefined";`,
+    "  }",
+    "",
+    `  const type = typeof value;`,
+    "",
+    `  if (type === "string") {`,
+    `    return \`string:\${value}\`;`,
+    "  }",
+    "",
+    `  if (type === "number") {`,
+    `    return \`number:\${Object.is(value, -0) ? "-0" : String(value)}\`;`,
+    "  }",
+    "",
+    `  if (type === "bigint") {`,
+    `    return \`bigint:\${value.toString()}\`;`,
+    "  }",
+    "",
+    `  if (type === "boolean") {`,
+    `    return value ? "boolean:true" : "boolean:false";`,
+    "  }",
+    "",
+    `  if (type === "symbol") {`,
+    `    return \`symbol:\${String(value)}\`;`,
+    "  }",
+    "",
+    `  let objectId = ${MARKUP_HELPER_PREFIX}ObjectIds.get(value);`,
+    "",
+    `  if (objectId === undefined) {`,
+    `    objectId = ${MARKUP_HELPER_PREFIX}NextObjectId;`,
+    `    ${MARKUP_HELPER_PREFIX}NextObjectId += 1;`,
+    `    ${MARKUP_HELPER_PREFIX}ObjectIds.set(value, objectId);`,
+    "  }",
+    "",
+    `  return \`object:\${objectId}\`;`,
+    "}",
+    "",
+    `function ${MARKUP_HELPER_PREFIX}DepsKey(deps) {`,
+    `  return deps.map(${MARKUP_HELPER_PREFIX}Hash).join("|");`,
+    "}",
+    "",
+    `function ${MARKUP_HELPER_PREFIX}Value(id, deps, factory, fallback) {`,
+    `  if (typeof window === "undefined") {`,
+    `    return fallback;`,
+    "  }",
+    "",
+    `  ${MARKUP_HELPER_PREFIX}Version;`,
+    "",
+    `  const cacheKey = \`\${id}::\${${MARKUP_HELPER_PREFIX}DepsKey(deps)}\`;`,
+    "",
+    `  if (!${MARKUP_HELPER_PREFIX}Cleanups.has(cacheKey)) {`,
+    `    if (!${MARKUP_HELPER_PREFIX}PendingStarts.has(cacheKey)) {`,
+    `      ${MARKUP_HELPER_PREFIX}PendingStarts.add(cacheKey);`,
+    `      queueMicrotask(() => {`,
+    `        ${MARKUP_HELPER_PREFIX}PendingStarts.delete(cacheKey);`,
+    "",
+    `        if (${MARKUP_HELPER_PREFIX}Cleanups.has(cacheKey)) {`,
+    "          return;",
+    "        }",
+    "",
+    `        ${MARKUP_HELPER_PREFIX}Cleanups.set(`,
+    "          cacheKey,",
+    `          ${MARKUP_HELPER_PREFIX}RunComponentEffect(`,
+    `            ${MARKUP_HELPER_PREFIX}Runtime,`,
+    `            ${MARKUP_HELPER_PREFIX}Effect.gen(function* () {`,
+    `              ${MARKUP_HELPER_PREFIX}Values[cacheKey] = yield* ${MARKUP_HELPER_PREFIX}Effect.gen(factory);`,
+    `              ${MARKUP_HELPER_PREFIX}Version += 1;`,
+    "            }),",
+    "          ),",
+    "        );",
+    "      });",
+    "    }",
+    "  }",
+    "",
+    `  return Object.prototype.hasOwnProperty.call(${MARKUP_HELPER_PREFIX}Values, cacheKey)`,
+    `    ? ${MARKUP_HELPER_PREFIX}Values[cacheKey]`,
+    "    : fallback;",
+    "}",
+    "",
+    `function ${MARKUP_HELPER_PREFIX}Promise(id, deps, factory) {`,
+    `  if (typeof window === "undefined") {`,
+    `    return Promise.resolve(undefined);`,
+    "  }",
+    "",
+    `  const cacheKey = \`\${id}::\${${MARKUP_HELPER_PREFIX}DepsKey(deps)}\`;`,
+    "",
+    `  if (!Object.prototype.hasOwnProperty.call(${MARKUP_HELPER_PREFIX}Promises, cacheKey)) {`,
+    `    ${MARKUP_HELPER_PREFIX}Promises[cacheKey] = new Promise((resolve, reject) => {`,
+    `      queueMicrotask(() => {`,
+    `        ${MARKUP_HELPER_PREFIX}RunInlineEffect(`,
+    `          ${MARKUP_HELPER_PREFIX}Runtime,`,
+    `          ${MARKUP_HELPER_PREFIX}Effect.gen(factory),`,
+    `        ).then(resolve, reject);`,
+    "      });",
+    `    }).catch((error) => {`,
+    `      delete ${MARKUP_HELPER_PREFIX}Promises[cacheKey];`,
+    "      throw error;",
+    "    });",
+    "  }",
+    "",
+    `  return ${MARKUP_HELPER_PREFIX}Promises[cacheKey];`,
+    "}",
+    "",
+    `function ${MARKUP_HELPER_PREFIX}Run(factory) {`,
+    `  if (typeof window === "undefined") {`,
+    "    return Promise.resolve(undefined);",
+    "  }",
+    "",
+    `  return ${MARKUP_HELPER_PREFIX}RunInlineEffect(`,
+    `    ${MARKUP_HELPER_PREFIX}Runtime,`,
+    `    ${MARKUP_HELPER_PREFIX}Effect.gen(factory),`,
+    "  );",
+    "}",
+    "",
+    `function ${MARKUP_HELPER_PREFIX}CleanupAll() {`,
+    `  for (const cleanup of ${MARKUP_HELPER_PREFIX}Cleanups.values()) {`,
+    "    cleanup();",
+    "  }",
+    "",
+    `  ${MARKUP_HELPER_PREFIX}Cleanups.clear();`,
+    "}",
+    "",
+    `${MARKUP_HELPER_PREFIX}OnDestroy(${MARKUP_HELPER_PREFIX}CleanupAll);`,
+    `${MARKUP_HELPER_PREFIX}RegisterHotDispose(import.meta, ${MARKUP_HELPER_PREFIX}CleanupAll);`,
+  ].join("\n");
+}
+
+function indentBlock(text: string, indent: string): string {
+  return text.split("\n").map((line) =>
+    line.length > 0 ? `${indent}${line}` : line
+  ).join("\n");
+}

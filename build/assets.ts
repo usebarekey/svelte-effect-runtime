@@ -1,0 +1,58 @@
+import { copy } from "@std/fs/copy";
+import { dirname, fromFileUrl, join, resolve } from "@std/path";
+
+const target = Deno.args[0];
+
+if (!target) {
+  throw new Error("Expected target package name.");
+}
+
+const repo_root = resolve(dirname(fromFileUrl(import.meta.url)), "..");
+const runtime_dist = join(repo_root, "modules", "svelte-effect-runtime", "dist");
+const runtime_manifest_path = join(
+  repo_root,
+  "modules",
+  "svelte-effect-runtime",
+  "package.json",
+);
+const package_dir = join(repo_root, "modules", target);
+const runtime_dir = join(package_dir, "runtime");
+
+try {
+  await Deno.stat(runtime_dist);
+} catch {
+  throw new Error(`Runtime dist not found at ${runtime_dist}`);
+}
+
+await Deno.remove(runtime_dir, { recursive: true }).catch(() => undefined);
+await Deno.mkdir(join(runtime_dir, "internal"), { recursive: true });
+await Deno.mkdir(join(runtime_dir, "chunks"), { recursive: true });
+
+const runtime_manifest = JSON.parse(await Deno.readTextFile(runtime_manifest_path));
+const runtime_package_json = {
+  type: "module",
+  dependencies: {
+    svelte: runtime_manifest.peerDependencies?.svelte,
+    typescript: runtime_manifest.dependencies?.typescript,
+  },
+};
+
+await Deno.writeTextFile(
+  join(runtime_dir, "package.json"),
+  `${JSON.stringify(runtime_package_json, null, 2)}\n`,
+);
+
+await Deno.copyFile(join(runtime_dist, "preprocess.js"), join(runtime_dir, "preprocess.js"));
+await copy(join(runtime_dist, "internal"), join(runtime_dir, "internal"), {
+  overwrite: true,
+});
+
+const runtime_chunks = join(runtime_dist, "chunks");
+try {
+  await Deno.stat(runtime_chunks);
+  await copy(runtime_chunks, join(runtime_dir, "chunks"), { overwrite: true });
+} catch (error) {
+  if (!(error instanceof Deno.errors.NotFound)) {
+    throw error;
+  }
+}
