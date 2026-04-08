@@ -1,9 +1,13 @@
 {
   "name": "@barekey/svelte-effect-runtime",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Client-side Effect runtime support for Svelte <script> blocks.",
   "license": "BSD-3-Clause",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/usebarekey/svelte-effect-runtime.git"
+  },
   "publishConfig": {
     "access": "public"
   },

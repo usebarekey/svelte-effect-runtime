@@ -114,5 +114,3 @@ jobs:
       - name: publish_runtime
         working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
