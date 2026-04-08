@@ -29,7 +29,7 @@ deno task test
 
 ```ts
 import * as Layer from "effect/Layer";
-import { SvelteRuntime } from "svelte-effect-runtime/client";
+import { SvelteRuntime } from "@barekey/svelte-effect-runtime/client";
 
 SvelteRuntime.make(
   Layer.provide(MyApi.Live),

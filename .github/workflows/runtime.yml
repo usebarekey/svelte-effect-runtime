@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: runtime-${{ github.ref }}
@@ -82,3 +83,36 @@ jobs:
       - name: build_runtime
         working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
         run: deno task build
+
+  publish_runtime:
+    needs:
+      - detect_version_bump
+      - lint_and_test
+      - build_runtime
+    if: needs.detect_version_bump.outputs.has_version_bump == 'true' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup_deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: setup_node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: build_runtime
+        working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
+        run: deno task build
+
+      - name: publish_runtime
+        working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

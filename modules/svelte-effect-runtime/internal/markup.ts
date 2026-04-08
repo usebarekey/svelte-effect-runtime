@@ -3,7 +3,7 @@ import { parse, type AST } from "svelte/compiler";
 import ts from "typescript";
 import type { EffectPreprocessOptions } from "../preprocess.ts";
 
-const DEFAULT_RUNTIME_MODULE_ID = "svelte-effect-runtime/client";
+const DEFAULT_RUNTIME_MODULE_ID = "@barekey/svelte-effect-runtime/client";
 const DEFAULT_EFFECT_MODULE_ID = "effect";
 const DEFAULT_SVELTE_MODULE_ID = "svelte";
 const MARKUP_HELPER_PREFIX = "__svelteEffectRuntimeMarkup";
