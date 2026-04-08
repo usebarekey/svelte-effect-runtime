@@ -18,11 +18,20 @@ async function runBuild(command: string[], cwd: string): Promise<void> {
   }
 }
 
+async function buildRuntimePackage(repoRoot: string): Promise<void> {
+  await runBuild([
+    "deno",
+    "task",
+    "build",
+  ], repoRoot);
+}
+
 Deno.test("plain Vite + Svelte fixture builds with the convenience plugin", async () => {
   const repoRoot = Deno.cwd();
   const fixtureRoot = join(repoRoot, "test/fixtures/plain-svelte");
   const distDir = join(fixtureRoot, "dist");
   await Deno.remove(distDir, { recursive: true }).catch(() => undefined);
+  await buildRuntimePackage(repoRoot);
 
   await runBuild([
     "node",
@@ -44,6 +53,7 @@ Deno.test("SvelteKit fixture builds through the preprocess path", async () => {
   await Deno.remove(join(fixtureRoot, ".svelte-kit"), {
     recursive: true,
   }).catch(() => undefined);
+  await buildRuntimePackage(repoRoot);
 
   await runBuild([
     "node",
