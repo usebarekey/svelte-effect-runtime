@@ -1,6 +1,6 @@
 {
   "name": "@barekey/svelte-effect-runtime",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Client-side Effect runtime support for Svelte <script> blocks.",
   "license": "BSD-3-Clause",
   "type": "module",
