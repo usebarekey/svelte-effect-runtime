@@ -69,3 +69,9 @@ In your `routes/+layout.svelte`:
 
 ### Enabling Effect in a component
 To enable Effect, add `effect` in your `<script>` tag.
+
+### This is still a beta
+I haven't properly tested it, so expect bugs! You can expedite this process by reporting issues though.
+
+### This only covers client execution
+I will get around to writing the server part for this soon.
