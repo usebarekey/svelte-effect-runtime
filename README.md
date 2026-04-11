@@ -51,7 +51,7 @@ And in your `svelte.config.js`:
 In your `routes/+layout.svelte`:
 
 ```svelte
-<script lang="ts">
+<script lang="ts" effect>
   import { Layer } from "effect";
   import { SvelteRuntime } from "svelte-effect-runtime/client";
 
@@ -64,3 +64,8 @@ In your `routes/+layout.svelte`:
 
 {@render children?.()}
 ```
+
+## Notes
+
+### Enabling Effect in a component
+To enable Effect, add `effect` in your `<script>` tag.
