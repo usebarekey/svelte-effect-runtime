@@ -4,6 +4,7 @@ node_modules
 **/.vercel
 coverage
 .DS_Store
+dist
 modules/svelte-effect-runtime/dist
 modules/svelte-effect-runtime/.tmp
 modules/svelte-effect-runtime-language-server/dist

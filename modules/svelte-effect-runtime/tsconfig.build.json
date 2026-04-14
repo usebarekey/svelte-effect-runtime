@@ -11,11 +11,23 @@
     "skipLibCheck": true,
     "rewriteRelativeImportExtensions": true,
     "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "baseUrl": ".",
+    "paths": {
+      "$app/server": [
+        "./internal/app-server-shim.ts"
+      ],
+      "@sveltejs/kit/internal/server": [
+        "./internal/sveltekit-internal-server-shim.d.ts"
+      ]
+    }
   },
   "include": [
     "./mod.ts",
+    "./root-node.ts",
+    "./effect.ts",
     "./client.ts",
+    "./server.ts",
     "./language-server.ts",
     "./preprocess.ts",
     "./vite.ts",

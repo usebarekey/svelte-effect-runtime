@@ -1,0 +1,59 @@
+name: vercel
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "modules/docs/**"
+      - ".github/workflows/vercel.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy_docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup_node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: install_docs_dependencies
+        working-directory: ${{ github.workspace }}/modules/docs
+        run: npm ci
+
+      - name: build_docs
+        working-directory: ${{ github.workspace }}/modules/docs
+        run: npm run build
+
+      - name: install_vercel_cli
+        run: npm install --global vercel@latest
+
+      - name: deploy_to_vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        shell: bash
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID must all be set." >&2
+            exit 1
+          fi
+
+          vercel deploy \
+            --prod \
+            --yes \
+            --token="$VERCEL_TOKEN" \
+            "${{ github.workspace }}/modules/docs/.vitepress/dist"

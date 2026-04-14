@@ -11,6 +11,7 @@ import {
 } from "../../../../node_modules/svelte/src/index-client.js";
 
 const EFFECT_RUNTIME_CONTEXT = Symbol.for("svelte-effect-runtime/runtime");
+let current_client_runtime: EffectRuntime<unknown> | null = null;
 
 export interface ProvideEffectRuntimeOptions {
   disposeOnDestroy?: boolean;
@@ -41,7 +42,7 @@ function runtimeSeed<R>(): Layer.Layer<R, never, R> {
   return Layer.effectContext(Effect.context<R>());
 }
 
-function pipeSvelteRuntime(...ops: Array<RuntimeOperator>): Layer.Layer<never> {
+function pipeClientRuntime(...ops: Array<RuntimeOperator>): Layer.Layer<never> {
   if (ops.length === 0) {
     return Layer.empty;
   }
@@ -52,14 +53,21 @@ function pipeSvelteRuntime(...ops: Array<RuntimeOperator>): Layer.Layer<never> {
   ) as Layer.Layer<never>;
 }
 
-export const SvelteRuntime = {
-  pipe: pipeSvelteRuntime,
+export const ClientRuntime = {
+  pipe: pipeClientRuntime,
   make(...ops: Array<RuntimeOperator>) {
-    const runtime = ManagedRuntime.make(
-      pipeSvelteRuntime(...ops) as Layer.Layer<unknown, unknown, never>,
-    );
+    const runtime = track_client_runtime(ManagedRuntime.make(
+      pipeClientRuntime(...ops) as Layer.Layer<unknown, unknown, never>,
+    ));
 
-    return provideEffectRuntime(runtime, { disposeOnDestroy: true });
+    void current_client_runtime?.dispose().catch(() => undefined);
+    current_client_runtime = runtime;
+
+    if (is_component_context_available()) {
+      return provideEffectRuntime(runtime, { disposeOnDestroy: true });
+    }
+
+    return runtime;
   },
 };
 
@@ -67,6 +75,7 @@ export function provideEffectRuntime<T extends EffectRuntime>(
   runtime: T,
   options: ProvideEffectRuntimeOptions = {},
 ): T {
+  current_client_runtime = track_client_runtime(runtime);
   setContext(EFFECT_RUNTIME_CONTEXT, runtime);
 
   if (options.disposeOnDestroy) {
@@ -81,9 +90,17 @@ export function provideEffectRuntime<T extends EffectRuntime>(
 export function getEffectRuntimeOrThrow<
   T extends EffectRuntime = EffectRuntime<never>,
 >(): T {
-  if (!hasContext(EFFECT_RUNTIME_CONTEXT)) {
+  if (has_runtime_context()) {
+    return getContext<T>(EFFECT_RUNTIME_CONTEXT);
+  }
+
+  if (current_client_runtime !== null) {
+    return current_client_runtime as T;
+  }
+
+  if (!has_runtime_context()) {
     throw new Error(
-      "No Effect runtime found. Call SvelteRuntime.make(...) or provideEffectRuntime(runtime) in a parent component before mounting a <script effect> component.",
+      "No Effect runtime found. Call ClientRuntime.make(...) from src/hooks.client.ts via `export const init = () => { ... }` before mounting a <script effect> component.",
     );
   }
 
@@ -134,4 +151,41 @@ export function registerHotDispose(
   cleanup: () => void,
 ): void {
   meta.hot?.dispose(cleanup);
+}
+
+function has_runtime_context(): boolean {
+  try {
+    return hasContext(EFFECT_RUNTIME_CONTEXT);
+  } catch {
+    return false;
+  }
+}
+
+function is_component_context_available(): boolean {
+  try {
+    void hasContext(EFFECT_RUNTIME_CONTEXT);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function track_client_runtime<T extends EffectRuntime>(runtime: T): T {
+  const tracked_runtime = runtime as T & { __ser_tracked__?: true };
+
+  if (tracked_runtime.__ser_tracked__ === true) {
+    return tracked_runtime;
+  }
+
+  const dispose = runtime.dispose.bind(runtime);
+  tracked_runtime.__ser_tracked__ = true;
+  runtime.dispose = (() => {
+    if (current_client_runtime === tracked_runtime) {
+      current_client_runtime = null;
+    }
+
+    return dispose();
+  }) as typeof runtime.dispose;
+
+  return tracked_runtime;
 }

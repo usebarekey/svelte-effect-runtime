@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { SvelteRuntime } from "ser/client";
+  import { ClientRuntime } from "ser";
   import Counter from "./Counter.svelte";
 
-  SvelteRuntime.make();
+  ClientRuntime.make();
 </script>
 
 <main>

@@ -3,10 +3,22 @@ import { dirname, fromFileUrl, join, resolve } from "@std/path";
 
 const repo_root = resolve(dirname(fromFileUrl(import.meta.url)), "..");
 const package_dir = join(repo_root, "modules", "svelte-effect-runtime-vscode-extension");
+const output_dir = join(repo_root, "dist", "svelte-effect-runtime-vscode-extension");
 const staging_dir = await Deno.makeTempDir({ prefix: "svelte-effect-runtime-vsix-" });
+const staging_dist_dir = join(staging_dir, "dist");
 
-await copy(join(package_dir, "dist"), join(staging_dir, "dist"), { overwrite: true });
-await copy(join(package_dir, "runtime"), join(staging_dir, "runtime"), { overwrite: true });
+await Deno.mkdir(staging_dist_dir, { recursive: true });
+await copy(join(output_dir, "chunks"), join(staging_dist_dir, "chunks"), { overwrite: true }).catch(
+  (error) => {
+    if (!(error instanceof Deno.errors.NotFound)) {
+      throw error;
+    }
+  },
+);
+for (const filename of ["extension.cjs", "extension.cjs.map", "server.cjs", "server.cjs.map"]) {
+  await Deno.copyFile(join(output_dir, filename), join(staging_dist_dir, filename));
+}
+await copy(join(output_dir, "runtime"), join(staging_dir, "runtime"), { overwrite: true });
 await Deno.copyFile(join(package_dir, "README.md"), join(staging_dir, "README.md"));
 
 const manifest = JSON.parse(
@@ -37,7 +49,8 @@ if (install_result.code !== 0) {
 }
 
 const output_name = `${manifest.name}-${manifest.version}.vsix`;
-await Deno.remove(join(package_dir, output_name), { recursive: true }).catch(() => undefined);
+await Deno.mkdir(output_dir, { recursive: true });
+await Deno.remove(join(output_dir, output_name), { recursive: true }).catch(() => undefined);
 const package_result = await new Deno.Command("npx", {
   args: [
     "--yes",
@@ -45,7 +58,7 @@ const package_result = await new Deno.Command("npx", {
     "package",
     "--allow-missing-repository",
     "--out",
-    join(package_dir, output_name),
+    join(output_dir, output_name),
   ],
   cwd: staging_dir,
   stdout: "inherit",

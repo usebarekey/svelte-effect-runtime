@@ -29,10 +29,12 @@ deno task test
 
 ```ts
 import * as Layer from "effect/Layer";
-import { SvelteRuntime } from "@barekey/svelte-effect-runtime/client";
+import { ClientRuntime } from "@barekey/svelte-effect-runtime";
 
-SvelteRuntime.make(
-  Layer.provide(MyApi.Live),
-  Layer.provide(Logger.Live),
-);
+export const init = () => {
+  ClientRuntime.make(
+    Layer.provide(MyApi.Live),
+    Layer.provide(Logger.Live),
+  );
+};
 ```

@@ -1,0 +1,29 @@
+# preprocess
+
+`effectPreprocess(...)` is the low-level `.svelte` preprocessor entry used by the plugin.
+
+```ts
+import { effectPreprocess } from "svelte-effect-runtime";
+```
+
+## Signature
+
+```ts
+export interface EffectPreprocessOptions {
+  runtimeModuleId?: string;
+  effectModuleId?: string;
+  svelteModuleId?: string;
+}
+
+export function effectPreprocess(
+  options?: EffectPreprocessOptions
+): PreprocessorGroup;
+```
+
+## Semantics
+
+- Rewrites `<script effect>` blocks.
+- Rewrites supported markup `yield*` expressions.
+- Injects runtime imports using `runtimeModuleId`.
+- Injects `Effect` imports using `effectModuleId`.
+- Uses `svelteModuleId` for Svelte runtime helpers.

@@ -5,8 +5,22 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import { getContext, hasContext, onDestroy, setContext } from "svelte";
+import {
+  create_remote_domain_error,
+  create_remote_http_error,
+  create_remote_transport_error,
+  create_remote_validation_error,
+  is_serialized_remote_failure_envelope,
+  REMOTE_ERROR_DECODER,
+  type RemoteDomainError,
+  type RemoteFailure,
+  type RemoteHttpError,
+  type RemoteTransportError,
+  type RemoteValidationError,
+} from "./internal/remote-shared.ts";
 
 const EFFECT_RUNTIME_CONTEXT = Symbol.for("svelte-effect-runtime/runtime");
+let current_client_runtime: EffectRuntime<unknown> | null = null;
 
 export interface ProvideEffectRuntimeOptions {
   disposeOnDestroy?: boolean;
@@ -29,10 +43,20 @@ export interface EffectRuntime<R = unknown> {
   dispose(): Promise<void>;
 }
 
-export interface SvelteRuntimeService extends EffectRuntime<unknown> {}
+export type {
+  FormError,
+  FormIssue,
+  RemoteDomainError,
+  RemoteFailure,
+  RemoteHttpError,
+  RemoteTransportError,
+  RemoteValidationError,
+} from "./internal/remote-shared.ts";
 
-export const SvelteRuntimeTag = Context.GenericTag<SvelteRuntimeService>(
-  "svelte-effect-runtime/SvelteRuntime",
+export interface ClientRuntimeService extends EffectRuntime<unknown> {}
+
+export const ClientRuntimeTag = Context.GenericTag<ClientRuntimeService>(
+  "svelte-effect-runtime/ClientRuntime",
 );
 
 type RuntimeSeedLayer<R> = Layer.Layer<R, never, R>;
@@ -70,12 +94,13 @@ type ApplyOperators<
 
 type FinalRuntimeLayer<Ops extends ReadonlyArray<RuntimeOperator>> =
   ApplyOperators<RuntimeSeedLayer<ProvidedByAll<Ops>>, Ops> extends infer Out
-    ? Out extends Layer.Layer<unknown, unknown, infer RIn> ? [RIn] extends [never] ? Out
+    ? Out extends Layer.Layer<unknown, unknown, infer RIn>
+      ? [RIn] extends [never] ? Out
       : never
     : never
     : never;
 
-interface SvelteRuntimeSeed {
+interface ClientRuntimeSeed {
   pipe(): Layer.Layer<never>;
   pipe<const Ops extends readonly [RuntimeOperator, ...Array<RuntimeOperator>]>(
     ...ops: Ops
@@ -92,11 +117,11 @@ type ManagedRuntimeFromOps<Ops extends ReadonlyArray<RuntimeOperator>> =
     Layer.Layer.Error<FinalRuntimeLayer<Ops>>
   >;
 
-function pipeSvelteRuntime(): Layer.Layer<never>;
-function pipeSvelteRuntime<
+function pipeClientRuntime(): Layer.Layer<never>;
+function pipeClientRuntime<
   const Ops extends readonly [RuntimeOperator, ...Array<RuntimeOperator>],
 >(...ops: Ops): FinalRuntimeLayer<Ops>;
-function pipeSvelteRuntime(
+function pipeClientRuntime(
   ...ops: Array<RuntimeOperator>
 ): Layer.Layer<never, unknown, unknown> {
   if (ops.length === 0) {
@@ -109,22 +134,29 @@ function pipeSvelteRuntime(
   ) as Layer.Layer<never, unknown, unknown>;
 }
 
-function makeSvelteRuntime(): ManagedRuntime.ManagedRuntime<never, never>;
-function makeSvelteRuntime<
+function makeClientRuntime(): ManagedRuntime.ManagedRuntime<never, never>;
+function makeClientRuntime<
   const Ops extends readonly [RuntimeOperator, ...Array<RuntimeOperator>],
 >(...ops: Ops): ManagedRuntimeFromOps<Ops>;
-function makeSvelteRuntime(
+function makeClientRuntime(
   ...ops: [] | [RuntimeOperator, ...Array<RuntimeOperator>]
 ): ManagedRuntime.ManagedRuntime<never, unknown> {
-  const layer = ops.length === 0 ? pipeSvelteRuntime() : pipeSvelteRuntime(
+  const layer = ops.length === 0 ? pipeClientRuntime() : pipeClientRuntime(
     ...(ops as [RuntimeOperator, ...Array<RuntimeOperator>]),
   );
 
-  const runtime = ManagedRuntime.make(
+  const runtime = track_client_runtime(ManagedRuntime.make(
     layer as unknown as Layer.Layer<unknown, unknown, never>,
-  );
+  ));
 
-  return provideEffectRuntime(runtime, { disposeOnDestroy: true });
+  void current_client_runtime?.dispose().catch(() => undefined);
+  current_client_runtime = runtime;
+
+  if (is_component_context_available()) {
+    return provideEffectRuntime(runtime, { disposeOnDestroy: true });
+  }
+
+  return runtime;
 }
 
 /**
@@ -132,21 +164,22 @@ function makeSvelteRuntime(
  * in the client ManagedRuntime. Users can compose this directly:
  *
  *   ManagedRuntime.make(
- *     SvelteRuntime.pipe(
+ *     ClientRuntime.pipe(
  *       Layer.provide(MyApi.Live),
  *       Layer.provide(Logger.Live),
  *     ),
  *   )
  */
-export const SvelteRuntime: SvelteRuntimeSeed = {
-  pipe: pipeSvelteRuntime,
-  make: makeSvelteRuntime,
+export const ClientRuntime: ClientRuntimeSeed = {
+  pipe: pipeClientRuntime,
+  make: makeClientRuntime,
 };
 
 export function provideEffectRuntime<T extends EffectRuntime>(
   runtime: T,
   options: ProvideEffectRuntimeOptions = {},
 ): T {
+  current_client_runtime = track_client_runtime(runtime);
   setContext(EFFECT_RUNTIME_CONTEXT, runtime);
 
   if (options.disposeOnDestroy) {
@@ -161,9 +194,17 @@ export function provideEffectRuntime<T extends EffectRuntime>(
 export function getEffectRuntimeOrThrow<
   T extends EffectRuntime = EffectRuntime<never>,
 >(): T {
-  if (!hasContext(EFFECT_RUNTIME_CONTEXT)) {
+  if (has_runtime_context()) {
+    return getContext<T>(EFFECT_RUNTIME_CONTEXT);
+  }
+
+  if (current_client_runtime !== null) {
+    return current_client_runtime as T;
+  }
+
+  if (!has_runtime_context()) {
     throw new Error(
-      "No Effect runtime found. Call SvelteRuntime.make(...) or provideEffectRuntime(runtime) in a parent component before mounting a <script effect> component.",
+      "No Effect runtime found. Call ClientRuntime.make(...) from src/hooks.client.ts via `export const init = () => { ... }` before mounting a <script effect> component.",
     );
   }
 
@@ -200,7 +241,11 @@ export function runInlineEffect<A, E, R>(
   runtime: EffectRuntime<R>,
   program: Effect.Effect<A, E, R>,
 ): Promise<A> {
+  console.log("[svelte-effect-runtime][client]", "runInlineEffect:start");
   return runtime.runPromise(program).catch((error) => {
+    console.error("[svelte-effect-runtime][client]", "runInlineEffect:error", {
+      error,
+    });
     queueMicrotask(() => {
       throw error;
     });
@@ -215,3 +260,193 @@ export function registerHotDispose(
 ): void {
   meta.hot?.dispose(cleanup);
 }
+
+function has_runtime_context(): boolean {
+  try {
+    return hasContext(EFFECT_RUNTIME_CONTEXT);
+  } catch {
+    return false;
+  }
+}
+
+function is_component_context_available(): boolean {
+  try {
+    void hasContext(EFFECT_RUNTIME_CONTEXT);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function track_client_runtime<T extends EffectRuntime>(runtime: T): T {
+  const tracked_runtime = runtime as T & { __ser_tracked__?: true };
+
+  if (tracked_runtime.__ser_tracked__ === true) {
+    return tracked_runtime;
+  }
+
+  const dispose = runtime.dispose.bind(runtime);
+  tracked_runtime.__ser_tracked__ = true;
+  runtime.dispose = (() => {
+    if (current_client_runtime === tracked_runtime) {
+      current_client_runtime = null;
+    }
+
+    return dispose();
+  }) as typeof runtime.dispose;
+
+  return tracked_runtime;
+}
+
+function is_redirect_like(value: unknown): boolean {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as { location?: unknown }).location === "string" &&
+      typeof (value as { status?: unknown }).status === "number",
+  );
+}
+
+type Decode_remote_payload = <ErrorType = unknown>(
+  encoded: string,
+) => ErrorType;
+
+function is_http_error_like(
+  value: unknown,
+): value is {
+  readonly body?: unknown;
+  readonly status?: number;
+} {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as { status?: unknown }).status === "number",
+  );
+}
+
+function get_error_status(value: unknown): number {
+  return is_http_error_like(value) ? value.status ?? 500 : 500;
+}
+
+function get_remote_error_decoder(
+  value: unknown,
+): Decode_remote_payload | undefined {
+  if (
+    value &&
+    (typeof value === "object" || typeof value === "function") &&
+    REMOTE_ERROR_DECODER in value
+  ) {
+    return (value as { [REMOTE_ERROR_DECODER]: Decode_remote_payload })[
+      REMOTE_ERROR_DECODER
+    ];
+  }
+}
+
+function decode_remote_error<ErrorType>(
+  error: unknown,
+  decode_payload?: Decode_remote_payload,
+): RemoteFailure<ErrorType> {
+  if (is_http_error_like(error)) {
+    const body = error.body;
+
+    if (is_serialized_remote_failure_envelope(body) && decode_payload) {
+      try {
+        return create_remote_domain_error<ErrorType>(
+          decode_payload<ErrorType>(body.encoded),
+          get_error_status(error),
+        );
+      } catch (cause) {
+        return create_remote_transport_error(cause, body);
+      }
+    }
+
+    if (get_error_status(error) === 400) {
+      return create_remote_validation_error([], {
+        body,
+        status: 400,
+      });
+    }
+
+    return create_remote_http_error(error, {
+      body,
+      status: get_error_status(error),
+    });
+  }
+
+  return create_remote_http_error(error);
+}
+
+function create_remote_effect_from_promise<Success, ErrorType = never>(
+  create_promise: () => PromiseLike<Success>,
+  decode_error: (error: unknown) => RemoteFailure<ErrorType> = (error) =>
+    create_remote_http_error(error),
+): Effect.Effect<Success, RemoteFailure<ErrorType>, never> {
+  return Effect.async<Success, RemoteFailure<ErrorType>>((resume) => {
+    void Promise.resolve()
+      .then(create_promise)
+      .then(
+        (value) => resume(Effect.succeed(value)),
+        (error) => {
+          if (is_redirect_like(error)) {
+            resume(Effect.die(error));
+            return;
+          }
+
+          resume(Effect.fail(decode_error(error)));
+        },
+      );
+  });
+}
+
+type AnyCallable = (...args: Array<any>) => any;
+
+export function to_effect<Success, ErrorType = never>(
+  promise_like: PromiseLike<Success>,
+): Effect.Effect<Success, RemoteFailure<ErrorType>, never>;
+export function to_effect<Args extends Array<any>, Success, ErrorType = never>(
+  fn: (...args: Args) => PromiseLike<Success>,
+): (...args: Args) => Effect.Effect<Success, RemoteFailure<ErrorType>, never>;
+export function to_effect<Success, ErrorType = never>(
+  value: PromiseLike<Success> | AnyCallable,
+): Effect.Effect<Success, RemoteFailure<ErrorType>, never> | AnyCallable {
+  const decode_payload = get_remote_error_decoder(value);
+
+  if (typeof value === "function") {
+    return ((...args: Array<unknown>) =>
+      create_remote_effect_from_promise(
+        () => Promise.resolve((value as AnyCallable)(...args)),
+        (error) => decode_remote_error<ErrorType>(error, decode_payload),
+      )) as AnyCallable;
+  }
+
+  return create_remote_effect_from_promise(
+    () => value,
+    (error) => decode_remote_error<ErrorType>(error, decode_payload),
+  );
+}
+
+export function to_native<Value>(
+  value: Value,
+): Value extends { native: infer Native } ? Native
+  : Value;
+export function to_native(value: unknown): unknown {
+  let current = value;
+  const seen = new Set<unknown>();
+
+  while (
+    current &&
+    (typeof current === "object" || typeof current === "function") &&
+    "native" in current
+  ) {
+    if (seen.has(current)) {
+      break;
+    }
+
+    seen.add(current);
+    current = (current as { native: unknown }).native;
+  }
+
+  return current;
+}
+
+export { create_remote_effect_from_promise, is_redirect_like };

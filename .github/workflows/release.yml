@@ -1,0 +1,178 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+
+    env:
+      TAG_NAME: ${{ github.ref_name }}
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: setup_deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: setup_node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: resolve_release_version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="$(node -p "require('./modules/svelte-effect-runtime/package.json').version")"
+            TAG="v$VERSION"
+          else
+            VERSION="${TAG_NAME#v}"
+            TAG="$TAG_NAME"
+          fi
+
+          if [ -z "$VERSION" ] || [ -z "$TAG" ]; then
+            echo "Failed to resolve release version or tag." >&2
+            exit 1
+          fi
+
+          echo "TAG_NAME=$TAG" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: validate_runtime_version
+        shell: bash
+        run: |
+          RUNTIME_VERSION="$(node -p "require('./modules/svelte-effect-runtime/package.json').version")"
+          if [ "$RUNTIME_VERSION" != "$RELEASE_VERSION" ]; then
+            echo "Runtime package version ($RUNTIME_VERSION) does not match tag version ($RELEASE_VERSION)." >&2
+            exit 1
+          fi
+
+      - name: lint
+        run: deno task lint
+
+      - name: test
+        run: deno task test
+
+      - name: build_runtime
+        working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
+        run: deno task build
+
+      - name: build_lsp
+        working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime-language-server
+        run: deno task build
+
+      - name: package_vsix
+        working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime-vscode-extension
+        run: deno task package
+
+      - name: pack_runtime
+        working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
+        shell: bash
+        run: |
+          mkdir -p "${{ github.workspace }}/dist/svelte-effect-runtime"
+          npm pack --pack-destination "${{ github.workspace }}/dist/svelte-effect-runtime"
+
+      - name: pack_lsp
+        working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime-language-server
+        shell: bash
+        run: |
+          mkdir -p "${{ github.workspace }}/dist/svelte-effect-runtime-language-server"
+          npm pack --pack-destination "${{ github.workspace }}/dist/svelte-effect-runtime-language-server"
+
+      - name: publish_runtime_to_npm
+        working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
+        run: npm publish --access public --provenance
+
+      - name: azure_login_for_marketplace
+        uses: azure/login@v2
+        env:
+          AZURE_CORE_OUTPUT: none
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: install_tfx_cli
+        run: npm install -g tfx-cli
+
+      - name: publish_extension_to_marketplace
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ] || [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
+            echo "AZURE_CLIENT_ID and AZURE_TENANT_ID secrets are required to publish the VSIX to the Visual Studio Marketplace." >&2
+            exit 1
+          fi
+
+          VSIX_PATH="$(find "${{ github.workspace }}/dist/svelte-effect-runtime-vscode-extension" -maxdepth 1 -name '*.vsix' -print -quit)"
+          if [ -z "$VSIX_PATH" ]; then
+            echo "No VSIX package found." >&2
+            exit 1
+          fi
+
+          ENTRA_TOKEN="$(az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv)"
+          if [ -z "$ENTRA_TOKEN" ]; then
+            echo "Failed to acquire Microsoft Entra access token for Azure DevOps Marketplace publishing." >&2
+            exit 1
+          fi
+
+          tfx extension publish \
+            --publisher barekey \
+            --vsix "$VSIX_PATH" \
+            --auth-type pat \
+            --token "$ENTRA_TOKEN"
+
+      - name: create_or_update_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists."
+          else
+            gh release create "$TAG_NAME" \
+              --title "$TAG_NAME" \
+              --generate-notes
+          fi
+
+      - name: upload_release_assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          RUNTIME_TGZ="$(find dist/svelte-effect-runtime -maxdepth 1 -name '*.tgz' -print -quit)"
+          LSP_TGZ="$(find dist/svelte-effect-runtime-language-server -maxdepth 1 -name '*.tgz' -print -quit)"
+          VSIX_PATH="$(find dist/svelte-effect-runtime-vscode-extension -maxdepth 1 -name '*.vsix' -print -quit)"
+
+          if [ -z "$RUNTIME_TGZ" ] || [ -z "$LSP_TGZ" ] || [ -z "$VSIX_PATH" ]; then
+            echo "Missing one or more release artifacts." >&2
+            echo "runtime: $RUNTIME_TGZ"
+            echo "lsp: $LSP_TGZ"
+            echo "vsix: $VSIX_PATH"
+            exit 1
+          fi
+
+          gh release upload "$TAG_NAME" \
+            "$RUNTIME_TGZ" \
+            "$LSP_TGZ" \
+            "$VSIX_PATH" \
+            --clobber

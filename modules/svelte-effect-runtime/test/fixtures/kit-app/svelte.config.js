@@ -16,6 +16,9 @@ const config = {
     alias: {
       ser: repoRoot,
     },
+    experimental: {
+      remoteFunctions: true,
+    },
   },
 };
 

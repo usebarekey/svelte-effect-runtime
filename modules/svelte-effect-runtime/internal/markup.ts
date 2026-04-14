@@ -3,7 +3,7 @@ import { parse, type AST } from "svelte/compiler";
 import ts from "typescript";
 import type { EffectPreprocessOptions } from "../preprocess.ts";
 
-const DEFAULT_RUNTIME_MODULE_ID = "@barekey/svelte-effect-runtime/client";
+const DEFAULT_RUNTIME_MODULE_ID = "@barekey/svelte-effect-runtime";
 const DEFAULT_EFFECT_MODULE_ID = "effect";
 const DEFAULT_SVELTE_MODULE_ID = "svelte";
 const MARKUP_HELPER_PREFIX = "__svelteEffectRuntimeMarkup";
@@ -63,7 +63,7 @@ export function transformEffectMarkup(
   }
 
   const replacements = collectMarkupReplacements(
-    sanitized.code,
+    create_parse_safe_markup_source(sanitized.code),
     sanitized.candidates,
     options.filename,
   );
@@ -84,6 +84,36 @@ export function transformEffectMarkup(
       source: options.filename,
     }),
   };
+}
+
+function create_parse_safe_markup_source(content: string): string {
+  const excluded_ranges = findExcludedRanges(content);
+
+  if (excluded_ranges.length === 0) {
+    return content;
+  }
+
+  let result = "";
+  let cursor = 0;
+
+  for (const range of excluded_ranges) {
+    result += content.slice(cursor, range.start);
+    result += mask_excluded_text(content.slice(range.start, range.end));
+    cursor = range.end;
+  }
+
+  result += content.slice(cursor);
+  return result;
+}
+
+function mask_excluded_text(text: string): string {
+  let result = "";
+
+  for (const character of text) {
+    result += character === "\n" || character === "\r" ? character : " ";
+  }
+
+  return result;
 }
 
 function sanitizeEffectMarkup(

@@ -6,7 +6,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import {
   registerHotDispose,
   runComponentEffect,
-  SvelteRuntime,
+  ClientRuntime,
 } from "../client.ts";
 import {
   compileFixtureModule,
@@ -26,10 +26,10 @@ Deno.test("mounted effect components can assign into top-level Svelte state", as
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { SvelteRuntime } from "${runtimeModuleId}";
+  import { ClientRuntime } from "${runtimeModuleId}";
   import Counter from "./Counter.svelte";
 
-  SvelteRuntime.make();
+  ClientRuntime.make();
 </script>
 
 <Counter />
@@ -63,10 +63,10 @@ Deno.test("later declarations can use yielded values like normal Effect code", a
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { SvelteRuntime } from "${runtimeModuleId}";
+  import { ClientRuntime } from "${runtimeModuleId}";
   import Counter from "./Counter.svelte";
 
-  SvelteRuntime.make();
+  ClientRuntime.make();
 </script>
 
 <Counter />
@@ -103,11 +103,11 @@ Deno.test("component unmount cancels the running effect", async () => {
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { SvelteRuntime } from "${runtimeModuleId}";
+  import { ClientRuntime } from "${runtimeModuleId}";
   import Worker from "./Worker.svelte";
 
   let { events } = $props<{ events: string[] }>();
-  SvelteRuntime.make();
+  ClientRuntime.make();
 </script>
 
 <Worker {events} />
@@ -172,7 +172,7 @@ Deno.test("missing providers throw a clear runtime error", async () => {
   }
 });
 
-Deno.test("SvelteRuntime.make auto-provides services to effect components", async () => {
+Deno.test("ClientRuntime.make auto-provides services to effect components", async () => {
   const dom = installDom();
 
   try {
@@ -186,11 +186,11 @@ export const NumberService = Context.GenericTag<{ readonly value: number }>(
 `,
         "App.svelte": `<script lang="ts">
   import * as Layer from "effect/Layer";
-  import { SvelteRuntime } from "${runtimeModuleId}";
+  import { ClientRuntime } from "${runtimeModuleId}";
   import { NumberService } from "./service.ts";
   import Counter from "./Counter.svelte";
 
-  SvelteRuntime.make(
+  ClientRuntime.make(
     Layer.provide(Layer.succeed(NumberService, { value: 42 })),
   );
 </script>
@@ -230,10 +230,10 @@ Deno.test("destructuring yielded values works in effect declarations", async () 
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { SvelteRuntime } from "${runtimeModuleId}";
+  import { ClientRuntime } from "${runtimeModuleId}";
   import Counter from "./Counter.svelte";
 
-  SvelteRuntime.make();
+  ClientRuntime.make();
 </script>
 
 <Counter />
@@ -268,10 +268,10 @@ Deno.test("markup helpers support inline handlers and block expressions", async 
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { SvelteRuntime } from "${runtimeModuleId}";
+  import { ClientRuntime } from "${runtimeModuleId}";
   import Demo from "./Demo.svelte";
 
-  SvelteRuntime.make();
+  ClientRuntime.make();
 </script>
 
 <Demo />
@@ -350,10 +350,10 @@ Deno.test("markup helpers still work when Svelte experimental async mode is enab
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { SvelteRuntime } from "${runtimeModuleId}";
+  import { ClientRuntime } from "${runtimeModuleId}";
   import Demo from "./Demo.svelte";
 
-  SvelteRuntime.make();
+  ClientRuntime.make();
 </script>
 
 <Demo />
@@ -415,10 +415,10 @@ Deno.test("inline yield event handlers respect exact effect semantics from the c
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { SvelteRuntime } from "${runtimeModuleId}";
+  import { ClientRuntime } from "${runtimeModuleId}";
   import Demo from "./Demo.svelte";
 
-  SvelteRuntime.make();
+  ClientRuntime.make();
 </script>
 
 <Demo />
@@ -533,13 +533,13 @@ Deno.test("hmr dispose wiring forwards cleanup callbacks", () => {
   assertEquals(disposed, true);
 });
 
-Deno.test("SvelteRuntime composes through Layer.provide for runtime dependencies", async () => {
+Deno.test("ClientRuntime composes through Layer.provide for runtime dependencies", async () => {
   const NumberService = Context.GenericTag<{ readonly value: number }>(
     "test/NumberService",
   );
 
   const runtime = ManagedRuntime.make(
-    SvelteRuntime.pipe(
+    ClientRuntime.pipe(
       Layer.provide(Layer.succeed(NumberService, { value: 42 })),
     ),
   );
@@ -555,7 +555,7 @@ Deno.test("SvelteRuntime composes through Layer.provide for runtime dependencies
   }
 });
 
-Deno.test("SvelteRuntime unions multiple provided services into one runtime", async () => {
+Deno.test("ClientRuntime unions multiple provided services into one runtime", async () => {
   const NumberService = Context.GenericTag<{ readonly value: number }>(
     "test/NumberService",
   );
@@ -564,7 +564,7 @@ Deno.test("SvelteRuntime unions multiple provided services into one runtime", as
   );
 
   const runtime = ManagedRuntime.make(
-    SvelteRuntime.pipe(
+    ClientRuntime.pipe(
       Layer.provide(Layer.succeed(NumberService, { value: 42 })),
       Layer.provide(Layer.succeed(TextService, { value: "ready" })),
     ),

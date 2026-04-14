@@ -1,6 +1,6 @@
 {
   "name": "@barekey/svelte-effect-runtime",
-  "version": "0.0.3",
+  "version": "1.0.0",
   "description": "Client-side Effect runtime support for Svelte <script> blocks.",
   "license": "BSD-3-Clause",
   "type": "module",
@@ -17,24 +17,17 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/mod.d.ts",
+      "types": "./dist/root-node.d.ts",
+      "node": "./dist/root-node.js",
       "default": "./dist/mod.js"
     },
-    "./client": {
-      "types": "./dist/client.d.ts",
-      "default": "./dist/client.js"
+    "./_server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
     },
     "./language-server": {
       "types": "./dist/language-server.d.ts",
       "default": "./dist/language-server.js"
-    },
-    "./preprocess": {
-      "types": "./dist/preprocess.d.ts",
-      "default": "./dist/preprocess.js"
-    },
-    "./vite": {
-      "types": "./dist/vite.d.ts",
-      "default": "./dist/vite.js"
     }
   },
   "scripts": {
@@ -52,6 +45,7 @@
     "vite": "^7.0.0 || ^8.0.0"
   },
   "dependencies": {
+    "devalue": "^5.5.0",
     "magic-string": "^0.30.21",
     "typescript": "^5.9.3"
   },

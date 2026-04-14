@@ -29,7 +29,7 @@ allowing you todo this:
 Install `svelte-effect-runtime` to your Svelte project:
 
 ```sh
-deno add @barekey/svelte-effect-runtime
+deno add npm:@barekey/svelte-effect-runtime
 pnpm add @barekey/svelte-effect-runtime
 bun add @barekey/svelte-effect-runtime
 ```
@@ -39,30 +39,24 @@ bun add @barekey/svelte-effect-runtime
 And in your `svelte.config.js`:
 
 ```diff
-+ import { effectPreprocess } from "svelte-effect-runtime/preprocess";
++ import { effectPreprocess } from "@barekey/svelte-effect-runtime/preprocess";
 
   export default {
 +   preprocess: [effectPreprocess()],
   };
 ```
 
-### Create a runtime in your root layout
+### Create a runtime in your client hook
 
-In your `routes/+layout.svelte`:
+```ts
+import * as Layer from "effect/Layer";
+import { ClientRuntime } from "@barekey/svelte-effect-runtime";
 
-```svelte
-<script lang="ts" effect>
-  import { Layer } from "effect";
-  import { SvelteRuntime } from "svelte-effect-runtime/client";
-
-  const { children } = $props();
-
-  SvelteRuntime.make(
+export const init = () => {
+  ClientRuntime.make(
     Layer.empty,
   );
-</script>
-
-{@render children?.()}
+};
 ```
 
 ## Notes
@@ -73,5 +67,23 @@ To enable Effect, add `effect` in your `<script>` tag.
 ### This is still a beta
 I haven't properly tested it, so expect bugs! You can expedite this process by reporting issues though.
 
-### This only covers client execution
-I will get around to writing the server part for this soon.
+And in your `src/hooks.server.ts` if you need server-side services:
+
+```ts
+import * as Layer from "effect/Layer";
+import { ServerRuntime } from "@barekey/svelte-effect-runtime";
+
+export const init = () => {
+  ServerRuntime.make(
+    Layer.empty,
+  );
+};
+```
+
+You do not need to create the runtime in a layout anymore.
+
+And thats it! You can now use Effect.ts in your Svelte components.
+
+## LSP
+
+You can install the VSIX 

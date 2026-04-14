@@ -212,6 +212,30 @@ Deno.test("rewrites inline event handlers with yield* into runtime-backed callba
   );
 });
 
+Deno.test("markup rewrites do not choke on yield* inside <script effect>", async () => {
+  const source = `<script lang="ts" effect>
+  import { Effect } from "effect";
+
+  let value = $state("");
+  value = yield* Effect.succeed("ready");
+</script>
+
+<button onclick={() => yield* Effect.succeed("clicked")}>Click</button>
+<p>{value}</p>
+`;
+
+  const result = await preprocess(source, effectPreprocess(), {
+    filename: "ScriptAndMarkupYield.svelte",
+  });
+
+  assertStringIncludes(result.code, `value = yield* Effect.succeed("ready");`);
+  assertStringIncludes(result.code, `onclick={() => {`);
+  assertStringIncludes(
+    result.code,
+    `void __svelteEffectRuntimeMarkupRun(function* () {`,
+  );
+});
+
 Deno.test("rewrites #if, #each, and #await markup expressions through markup helpers", async () => {
   const source = `<script lang="ts" effect>
   import { Effect } from "effect";
