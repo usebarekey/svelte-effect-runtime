@@ -8,29 +8,33 @@ const Create_post = Schema.Struct({
   title: Schema.String,
 });
 
-if (false) {
-  Form(Create_post, ({ data, invalid }) => {
-    data.title satisfies string;
-    invalid.title satisfies (
-      message: string,
-    ) => Effect.Effect<never, FormError<typeof Create_post>, never>;
+Deno.test("remote type helpers compile", () => {
+  const should_skip_runtime = typeof document !== "undefined";
 
-    // @ts-expect-error - only top-level schema keys should be available
-    invalid.slug;
+  if (should_skip_runtime) {
+    Form(Create_post, ({ data, invalid }) => {
+      data.title satisfies string;
+      invalid.title satisfies (
+        message: string,
+      ) => Effect.Effect<never, FormError<typeof Create_post>, never>;
 
-    return Effect.succeed({
-      ok: true as const,
+      // @ts-expect-error - only top-level schema keys should be available
+      invalid.slug;
+
+      return Effect.succeed({
+        ok: true as const,
+      });
     });
-  });
 
-  Query(() =>
-    Effect.gen(function* () {
-      const request_event = yield* RequestEvent;
-      request_event.cookies.get("session_id");
-      return "ok";
-    })
-  );
+    Query(() =>
+      Effect.gen(function* () {
+        const request_event = yield* RequestEvent;
+        request_event.cookies.get("session_id");
+        return "ok";
+      })
+    );
 
-  // @ts-expect-error - non-Effect schema validators are unsupported
-  Query({ parse: (value: unknown) => value }, () => Effect.succeed("nope"));
-}
+    // @ts-expect-error - non-Effect schema validators are unsupported
+    Query({ parse: (value: unknown) => value }, () => Effect.succeed("nope"));
+  }
+});

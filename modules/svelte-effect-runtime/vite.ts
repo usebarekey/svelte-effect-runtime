@@ -2,6 +2,10 @@ import {
   type Options as SveltePluginOptions,
   svelte,
 } from "@sveltejs/vite-plugin-svelte";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+import process from "node:process";
+import { pathToFileURL } from "node:url";
 import type { Plugin } from "vite";
 import {
   effectPreprocess,
@@ -59,38 +63,42 @@ function resolve_runtime_internal_path(
   return new URL(relative_path, import.meta.url).pathname;
 }
 
+function resolve_kit_internal_runtime_path(relative_path: string): string {
+  const runtime_require = createRequire(resolve(process.cwd(), "package.json"));
+  const kit_package_path = runtime_require.resolve("@sveltejs/kit/package.json");
+  const kit_root = dirname(kit_package_path);
+
+  return pathToFileURL(resolve(kit_root, relative_path)).href;
+}
+
 function create_remote_runtime_module_code(): string {
   const adapter_module_path = resolve_runtime_internal_path(
     "./internal/remote-client.ts",
     "./internal/remote-client.js",
   );
-  const kit_query_module_path = resolve_runtime_internal_path(
-    "../../node_modules/@sveltejs/kit/src/runtime/client/remote-functions/query.svelte.js",
-    "../../../node_modules/@sveltejs/kit/src/runtime/client/remote-functions/query.svelte.js",
+  const kit_query_module_path = resolve_kit_internal_runtime_path(
+    "src/runtime/client/remote-functions/query.svelte.js",
   );
-  const kit_command_module_path = resolve_runtime_internal_path(
-    "../../node_modules/@sveltejs/kit/src/runtime/client/remote-functions/command.svelte.js",
-    "../../../node_modules/@sveltejs/kit/src/runtime/client/remote-functions/command.svelte.js",
+  const kit_command_module_path = resolve_kit_internal_runtime_path(
+    "src/runtime/client/remote-functions/command.svelte.js",
   );
-  const kit_form_module_path = resolve_runtime_internal_path(
-    "../../node_modules/@sveltejs/kit/src/runtime/client/remote-functions/form.svelte.js",
-    "../../../node_modules/@sveltejs/kit/src/runtime/client/remote-functions/form.svelte.js",
+  const kit_form_module_path = resolve_kit_internal_runtime_path(
+    "src/runtime/client/remote-functions/form.svelte.js",
   );
-  const kit_prerender_module_path = resolve_runtime_internal_path(
-    "../../node_modules/@sveltejs/kit/src/runtime/client/remote-functions/prerender.svelte.js",
-    "../../../node_modules/@sveltejs/kit/src/runtime/client/remote-functions/prerender.svelte.js",
+  const kit_prerender_module_path = resolve_kit_internal_runtime_path(
+    "src/runtime/client/remote-functions/prerender.svelte.js",
   );
-  const kit_shared_module_path = resolve_runtime_internal_path(
-    "../../node_modules/@sveltejs/kit/src/runtime/client/remote-functions/shared.svelte.js",
-    "../../../node_modules/@sveltejs/kit/src/runtime/client/remote-functions/shared.svelte.js",
+  const kit_shared_module_path = resolve_kit_internal_runtime_path(
+    "src/runtime/client/remote-functions/shared.svelte.js",
   );
-  const kit_client_module_path = resolve_runtime_internal_path(
-    "../../node_modules/@sveltejs/kit/src/runtime/client/client.js",
-    "../../../node_modules/@sveltejs/kit/src/runtime/client/client.js",
+  const kit_client_module_path = resolve_kit_internal_runtime_path(
+    "src/runtime/client/client.js",
   );
-  const kit_form_utils_module_path = resolve_runtime_internal_path(
-    "../../node_modules/@sveltejs/kit/src/runtime/form-utils.js",
-    "../../../node_modules/@sveltejs/kit/src/runtime/form-utils.js",
+  const kit_form_utils_module_path = resolve_kit_internal_runtime_path(
+    "src/runtime/form-utils.js",
+  );
+  const kit_shared_runtime_module_path = resolve_kit_internal_runtime_path(
+    "src/runtime/shared.js",
   );
 
   return `
@@ -107,10 +115,7 @@ import {
 } from ${JSON.stringify(kit_shared_module_path)};
 import { app, invalidateAll, _goto } from ${JSON.stringify(kit_client_module_path)};
 import { BINARY_FORM_CONTENT_TYPE, serialize_binary_form } from ${JSON.stringify(kit_form_utils_module_path)};
-import { stringify_remote_arg } from ${JSON.stringify(resolve_runtime_internal_path(
-   "../../node_modules/@sveltejs/kit/src/runtime/shared.js",
-   "../../../node_modules/@sveltejs/kit/src/runtime/shared.js",
- ))};
+import { stringify_remote_arg } from ${JSON.stringify(kit_shared_runtime_module_path)};
 import {
   create_remote_command_adapter,
   create_remote_form_adapter,

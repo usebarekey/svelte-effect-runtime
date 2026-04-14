@@ -12,11 +12,7 @@ import {
   create_remote_validation_error,
   is_serialized_remote_failure_envelope,
   REMOTE_ERROR_DECODER,
-  type RemoteDomainError,
   type RemoteFailure,
-  type RemoteHttpError,
-  type RemoteTransportError,
-  type RemoteValidationError,
 } from "./internal/remote-shared.ts";
 
 const EFFECT_RUNTIME_CONTEXT = Symbol.for("svelte-effect-runtime/runtime");
@@ -398,12 +394,12 @@ function create_remote_effect_from_promise<Success, ErrorType = never>(
   });
 }
 
-type AnyCallable = (...args: Array<any>) => any;
+type AnyCallable = (...args: Array<unknown>) => unknown;
 
 export function to_effect<Success, ErrorType = never>(
   promise_like: PromiseLike<Success>,
 ): Effect.Effect<Success, RemoteFailure<ErrorType>, never>;
-export function to_effect<Args extends Array<any>, Success, ErrorType = never>(
+export function to_effect<Args extends Array<unknown>, Success, ErrorType = never>(
   fn: (...args: Args) => PromiseLike<Success>,
 ): (...args: Args) => Effect.Effect<Success, RemoteFailure<ErrorType>, never>;
 export function to_effect<Success, ErrorType = never>(

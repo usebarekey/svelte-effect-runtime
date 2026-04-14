@@ -27,21 +27,17 @@ export const get_post = Query(Post_slug, (slug) =>
 );
 
 export const get_posts = Query.batch(Post_slug, (slugs) =>
-  Effect.gen(function* () {
-    return (slug: string, index: number) => ({
+  Effect.succeed(slugs.map((slug, index) => ({
       index,
       slug,
       title: `Post ${slug}`,
       total: slugs.length,
-    });
-  })
+    })))
 );
 
 export const square_post = Command(Schema.Number, (value) =>
-  Effect.gen(function* () {
-    return {
-      value: value * value,
-    };
+  Effect.succeed({
+    value: value * value,
   })
 );
 
@@ -63,13 +59,10 @@ export const create_post = Form(Create_post, ({ data, invalid }) =>
 
 export const get_static_post = Prerender(
   Post_slug,
-  (slug) =>
-    Effect.gen(function* () {
-      return {
-        slug,
-        title: `Static ${slug}`,
-      };
-    }),
+  (slug) => Effect.succeed({
+    slug,
+    title: `Static ${slug}`,
+  }),
   {
     dynamic: false,
     inputs: function* (_request_event) {

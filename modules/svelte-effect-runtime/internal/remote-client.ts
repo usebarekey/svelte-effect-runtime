@@ -13,7 +13,7 @@ import {
   type RemoteFailure,
 } from "./remote-shared.ts";
 
-type AnyCallable = (...args: Array<any>) => any;
+type AnyCallable = (...args: Array<unknown>) => unknown;
 
 type Decode_remote_payload = <ErrorType = unknown>(
   encoded: string,

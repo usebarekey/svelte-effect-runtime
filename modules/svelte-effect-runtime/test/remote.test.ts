@@ -30,7 +30,9 @@ function create_form_dependencies() {
     },
     goto() {},
     invalidate_all() {},
-    remote_request: async () => "",
+    remote_request() {
+      return Promise.resolve("");
+    },
     serialize_binary_form() {
       return {
         blob: new Blob(),
@@ -53,7 +55,7 @@ Deno.test("create_effect_transport round-trips schema-backed classes", () => {
 
   assertExists(encoded);
 
-  const decoded = transport.Post.decode(encoded as { value: unknown });
+  const decoded = transport.Post.decode(encoded as { value: unknown }) as Post;
 
   assertEquals(decoded instanceof Post, true);
   assertEquals(decoded.title, "hello");
@@ -77,7 +79,17 @@ Deno.test("query adapter decodes domain failures into the Effect error channel",
       }),
     (serialized) => devalue.parse(serialized),
   );
-  const get_post = query_factory("hash/get_post");
+  const get_post = query_factory("hash/get_post") as (
+    id: string,
+  ) => Effect.Effect<
+    unknown,
+    {
+      _tag: string;
+      cause: unknown;
+      status: number;
+    },
+    never
+  >;
 
   const exit = await Effect.runPromiseExit(get_post("post-1"));
 
@@ -188,10 +200,10 @@ Deno.test("form adapter submit reuses native form state on success", async () =>
               await callback({
                 form,
                 data: {},
-                submit: async () => {
+                submit: () => Promise.resolve().then(() => {
                   native_form.fields.allIssues = [];
                   native_form.result = { slug: "hello" };
-                },
+                }),
               });
             };
 
@@ -262,13 +274,13 @@ Deno.test("form adapter submit surfaces native form validation issues", async ()
               await callback({
                 form,
                 data: {},
-                submit: async () => {
+                submit: () => Promise.resolve().then(() => {
                   native_form.fields.allIssues = [{
                     message: "title too short",
                     path: ["title"],
                   }];
                   native_form.result = undefined;
-                },
+                }),
               });
             };
 

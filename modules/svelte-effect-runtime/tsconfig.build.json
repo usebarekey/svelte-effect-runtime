@@ -12,6 +12,9 @@
     "rewriteRelativeImportExtensions": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
+    "types": [
+      "node"
+    ],
     "baseUrl": ".",
     "paths": {
       "$app/server": [

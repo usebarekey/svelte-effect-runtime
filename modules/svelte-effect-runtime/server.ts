@@ -26,7 +26,7 @@ import {
 
 type EffectSchema = Schema.Schema.Any;
 
-export interface Transporter<T = any, U = { value: unknown }> {
+export interface Transporter<T = unknown, U = { value: unknown }> {
   decode: (data: U) => T;
   encode: (value: T) => false | U;
 }
@@ -61,7 +61,7 @@ export type RemoteForm<Input extends RemoteFormInput | void, Output> = {
     readonly action: string;
     readonly method: "POST";
   };
-  fields: Record<string, any>;
+  fields: Record<string, unknown>;
   for: (id: string | number) => RemoteForm<Input, Output>;
   readonly method: "POST";
   readonly pending: number;
@@ -121,7 +121,7 @@ type FieldHelpers<FormShape, SchemaType> = FormShape extends Record<string, unkn
         message: string,
       ) => Effect.Effect<never, FormError<SchemaType>, never>;
     }
-  : {};
+  : Record<PropertyKey, never>;
 
 export type Invalid<SchemaType = unknown> = {
   form: (message: string) => Effect.Effect<never, FormError<SchemaType>, never>;
@@ -249,7 +249,13 @@ function is_effect_schema(value: unknown): value is EffectSchema {
 
 function get_effect_schema_validator(schema: EffectSchema) {
   return Schema.standardSchemaV1(
-    schema as Schema.Schema<any, any, never>,
+    schema as Schema.Schema<unknown, unknown, never>,
+  );
+}
+
+function get_effect_form_validator(schema: EffectSchema) {
+  return Schema.standardSchemaV1(
+    schema as Schema.Schema<Record<string, unknown>, RemoteFormInput, never>,
   );
 }
 
@@ -449,7 +455,7 @@ export function create_effect_transport<
             return Schema.is(schema)(value)
               ? {
                 value: Schema.encodeSync(
-                  schema as Schema.Schema<any, any, never>,
+                  schema as Schema.Schema<unknown, unknown, never>,
                 )(value),
               }
               : false;
@@ -459,7 +465,7 @@ export function create_effect_transport<
         },
         decode(data: { value: unknown }) {
           return Schema.decodeSync(
-            schema as Schema.Schema<any, any, never>,
+            schema as Schema.Schema<unknown, unknown, never>,
           )(data.value);
         },
       }];
@@ -630,8 +636,8 @@ const form_impl = (validate_or_fn: unknown, maybe_fn?: unknown): unknown => {
         ),
     )
     : native_form(
-      get_effect_schema_validator(resolved.validate as EffectSchema),
-      (data: RemoteFormInput) =>
+      get_effect_form_validator(resolved.validate as EffectSchema),
+      (data: Record<string, unknown>) =>
         run_remote_effect(
           (resolved.fn as (args: unknown) => Effect.Effect<unknown, unknown, unknown>)({
             data,
@@ -699,6 +705,25 @@ export interface EffectPrerenderFactory {
   ): EffectPrerenderFunction<SchemaInput<SchemaType>, Output, ErrorType>;
 }
 
+type NativePrerender = {
+  (
+    fn: () => Promise<unknown>,
+    options?: RemotePrerenderOptions<void>,
+  ): object;
+  (
+    validate: "unchecked",
+    fn: (arg: unknown) => Promise<unknown>,
+    options?: RemotePrerenderOptions<unknown>,
+  ): object;
+  (
+    validate: EffectSchema,
+    fn: (arg: unknown) => Promise<unknown>,
+    options?: RemotePrerenderOptions<unknown>,
+  ): object;
+};
+
+const native_prerender_fn = native_prerender as unknown as NativePrerender;
+
 const prerender_impl = (
   validate_or_fn: unknown,
   fn_or_options?: unknown,
@@ -708,7 +733,7 @@ const prerender_impl = (
     typeof validate_or_fn === "function" &&
     typeof fn_or_options !== "function"
   ) {
-    const native = (native_prerender as any)(
+    const native = native_prerender_fn(
       () =>
         run_remote_effect(
           (validate_or_fn as () => Effect.Effect<unknown, unknown, unknown>)(),
@@ -724,7 +749,7 @@ const prerender_impl = (
     fn_or_options as ((arg: unknown) => Effect.Effect<unknown, unknown, unknown>) | undefined,
   );
   const native = resolved.validate === "unchecked"
-    ? (native_prerender as any)(
+    ? native_prerender_fn(
       "unchecked",
       (arg: unknown) =>
         run_remote_effect(
@@ -732,7 +757,7 @@ const prerender_impl = (
         ),
       maybe_options as RemotePrerenderOptions<unknown> | undefined,
     )
-    : (native_prerender as any)(
+    : native_prerender_fn(
       get_effect_schema_validator(resolved.validate as EffectSchema),
       (arg: unknown) =>
         run_remote_effect(
