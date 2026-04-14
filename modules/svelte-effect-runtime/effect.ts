@@ -1,6 +1,5 @@
 import { preprocess } from "svelte/compiler";
 import type { Plugin, PluginOption } from "vite";
-import type { SourceMapInput } from "rollup";
 import {
   effectPreprocess,
   type EffectPreprocessOptions,
@@ -31,11 +30,9 @@ function create_effect_svelte_transform(
         return null;
       }
 
-      const map = transformed.map as SourceMapInput | null | undefined;
-
       return {
         code: transformed.code,
-        ...(map ? { map } : {}),
+        ...(transformed.map ? { map: transformed.map as never } : {}),
       };
     },
   };
