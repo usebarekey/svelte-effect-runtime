@@ -78,7 +78,7 @@ import { Lightbulb } from "lucide-vue-next";
   </p>
 </div>
 
-### Creating a client Runtime
+### Creating the client Runtime
 
 For the client, create your runtime in your `hooks.client.ts`:
 
@@ -92,7 +92,7 @@ export const init = () => {
 }
 ```
 
-### Creating the a server runtime
+### Creating the server runtime
 
 For the server, you create your runtime in your `hooks.server.ts`:
 
