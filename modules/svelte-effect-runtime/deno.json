@@ -13,7 +13,7 @@
   "imports": {
     "@std/assert": "jsr:@std/assert@^1.0.15",
     "@std/path": "jsr:@std/path@^1.1.2",
-    "@barekey/svelte-effect-runtime": "./mod.ts",
+    "svelte-effect-runtime": "./mod.ts",
     "$app/server": "./internal/app-server-shim.ts",
     "effect": "npm:effect@^3.21.0",
     "effect/": "npm:/effect@^3.21.0/",

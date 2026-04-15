@@ -2,7 +2,7 @@ import MagicString, { type SourceMap } from "magic-string";
 import ts from "typescript";
 import type { EffectPreprocessOptions } from "../preprocess.ts";
 
-const DEFAULT_RUNTIME_MODULE_ID = "@barekey/svelte-effect-runtime";
+const DEFAULT_RUNTIME_MODULE_ID = "svelte-effect-runtime";
 const DEFAULT_EFFECT_MODULE_ID = "effect";
 const DEFAULT_SVELTE_MODULE_ID = "svelte";
 

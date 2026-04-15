@@ -1,3 +1,4 @@
+import { copy } from "@std/fs/copy";
 import { build } from "rolldown";
 import { dirname, fromFileUrl, join, resolve } from "@std/path";
 
@@ -8,7 +9,8 @@ const package_dist = new URL("./dist", package_dir).pathname;
 
 await Deno.mkdir(output_dir, { recursive: true });
 await Deno.remove(package_dist, { recursive: true }).catch(() => undefined);
-await Deno.symlink(output_dir, package_dist, { type: "dir" });
+await Deno.remove(output_dir, { recursive: true }).catch(() => undefined);
+await Deno.mkdir(output_dir, { recursive: true });
 
 const external = [
   /^\$app\/server$/,
@@ -45,3 +47,5 @@ await build({
   },
   external,
 });
+
+await copy(output_dir, package_dist, { overwrite: true });

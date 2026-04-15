@@ -25,8 +25,8 @@ export interface SveltekitEffectRuntimeOptions {
   remoteModuleId?: string;
 }
 
-const ROOT_PACKAGE_ID = "@barekey/svelte-effect-runtime";
-const INTERNAL_SERVER_PACKAGE_ID = "@barekey/svelte-effect-runtime/_server";
+const ROOT_PACKAGE_ID = "svelte-effect-runtime";
+const INTERNAL_SERVER_PACKAGE_ID = "svelte-effect-runtime/_server";
 const SERVER_SOURCE_PATTERN =
   /(?:^|\/)(?:hooks\.server\.[cm]?[jt]s|.+\.server\.[cm]?[jt]s|.+\.remote\.[cm]?[jt]s)$/;
 
