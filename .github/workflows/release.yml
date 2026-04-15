@@ -155,10 +155,6 @@ jobs:
           mkdir -p "${{ github.workspace }}/dist/svelte-effect-runtime-language-server"
           npm pack --pack-destination "${{ github.workspace }}/dist/svelte-effect-runtime-language-server"
 
-      - name: publish_runtime_to_npm
-        working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
-        run: npm publish --access public --provenance
-
       - name: azure_login_for_marketplace
         uses: azure/login@v2
         env:
