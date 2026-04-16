@@ -7,6 +7,12 @@ on:
     paths:
       - modules/svelte-effect-runtime/package.json
   workflow_dispatch:
+    inputs:
+      publish_runtime:
+        description: Publish the runtime package
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -89,7 +95,7 @@ jobs:
       - detect_version_bump
       - lint_and_test
       - build_runtime
-    if: needs.detect_version_bump.outputs.has_version_bump == 'true' && github.event_name == 'push'
+    if: needs.detect_version_bump.outputs.has_version_bump == 'true' && (github.event_name == 'push' || inputs.publish_runtime)
     runs-on: ubuntu-latest
 
     steps:
@@ -106,10 +112,24 @@ jobs:
         with:
           node-version: 22
 
+      - name: setup_npm
+        shell: bash
+        run: |
+          npm install --global npm@^11.5.1
+          npm --version
+
       - name: build_runtime
         working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
         run: deno task build
 
       - name: publish_runtime
         working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
-        run: npm publish --access public --provenance
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          if [ -n "${NPM_TOKEN}" ]; then
+            printf '//registry.npmjs.org/:_authToken=%s\n' "${NPM_TOKEN}" > "${HOME}/.npmrc"
+          fi
+
+          npm publish --access public --provenance
