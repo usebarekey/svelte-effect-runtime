@@ -6,6 +6,9 @@
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/path@^1.1.2": "1.1.4",
     "jsr:@std/path@^1.1.4": "1.1.4",
+    "jsr:@std/yaml@*": "1.0.12",
+    "npm:@babel/parser@*": "7.29.2",
+    "npm:@babel/parser@^7.29.2": "7.29.2",
     "npm:@fontsource/jetbrains-mono@^5.2.8": "5.2.8",
     "npm:@jridgewell/trace-mapping@~0.3.31": "0.3.31",
     "npm:@sveltejs/adapter-static@^3.0.10": "3.0.10_@sveltejs+kit@2.56.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.1____acorn@8.16.0___vite@7.3.1____@types+node@24.12.2____picomatch@4.0.4___@types+node@24.12.2__svelte@5.55.1___acorn@8.16.0__typescript@5.9.3__vite@7.3.1___@types+node@24.12.2___picomatch@4.0.4__acorn@8.16.0__@types+node@24.12.2_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.55.1___acorn@8.16.0__vite@7.3.1___@types+node@24.12.2___picomatch@4.0.4__@types+node@24.12.2_svelte@5.55.1__acorn@8.16.0_typescript@5.9.3_vite@7.3.1__@types+node@24.12.2__picomatch@4.0.4_@types+node@24.12.2",
@@ -21,6 +24,7 @@
     "npm:rolldown@*": "1.0.0-rc.13",
     "npm:rolldown@^1.0.0-rc.13": "1.0.0-rc.13",
     "npm:svelte-language-server@~0.17.30": "0.17.30_prettier@3.3.3_svelte@4.2.20_typescript@5.9.3",
+    "npm:svelte@*": "5.55.1_acorn@8.16.0",
     "npm:svelte@^5.55.1": "5.55.1_acorn@8.16.0",
     "npm:typescript@^5.9.2": "5.9.3",
     "npm:typescript@^5.9.3": "5.9.3",
@@ -49,6 +53,9 @@
       "dependencies": [
         "jsr:@std/internal"
       ]
+    },
+    "@std/yaml@1.0.12": {
+      "integrity": "7deabca4545bcedd07c5f69ea53acea71b8b4c67562f224e17b90d75944cb20c"
     }
   },
   "npm": {
@@ -2163,6 +2170,7 @@
         "dependencies": [
           "jsr:@std/assert@^1.0.15",
           "jsr:@std/path@^1.1.2",
+          "npm:@babel/parser@^7.29.2",
           "npm:@sveltejs/adapter-static@^3.0.10",
           "npm:@sveltejs/kit@*",
           "npm:@sveltejs/kit@^2.56.1",

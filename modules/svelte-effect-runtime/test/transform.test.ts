@@ -1,6 +1,7 @@
 import {
   assertEquals,
   assertMatch,
+  assertRejects,
   assertStringIncludes,
 } from "@std/assert";
 import { preprocess } from "svelte/compiler";
@@ -320,5 +321,169 @@ Deno.test("rewrites key blocks and spread attributes through the markup AST pass
   assertStringIncludes(
     result.code,
     `{...__svelteEffectRuntimeMarkupValue(`,
+  );
+});
+
+Deno.test("rewrites render tags through the markup AST pass", async () => {
+  const source = `<script lang="ts" effect>
+  import { Effect } from "effect";
+</script>
+
+{@render yield* Effect.succeed(content())}
+
+{#snippet content()}
+  <p>ready</p>
+{/snippet}
+`;
+
+  const result = await preprocess(source, effectPreprocess(), {
+    filename: "RenderTag.svelte",
+  });
+
+  assertStringIncludes(
+    result.code,
+    `{@render __svelteEffectRuntimeMarkupValue(`,
+  );
+});
+
+Deno.test("rewrites parenthesized yield render tags that still resolve to calls", async () => {
+  const source = `<script lang="ts" effect>
+  import { Effect } from "effect";
+</script>
+
+{@render yield* (content())}
+{@render (yield* content())}
+
+{#snippet content()}
+  <p>ready</p>
+{/snippet}
+`;
+
+  const result = await preprocess(source, effectPreprocess(), {
+    filename: "RenderTagParenthesized.svelte",
+  });
+
+  assertStringIncludes(
+    result.code,
+    `{@render __svelteEffectRuntimeMarkupValue(`,
+  );
+});
+
+Deno.test("rejects render tags that do not resolve to calls after yield lowering", async () => {
+  const source = `<script lang="ts" effect>
+  import { Effect } from "effect";
+</script>
+
+{@render yield* content}
+
+{#snippet content()}
+  <p>ready</p>
+{/snippet}
+`;
+
+  await assertRejects(
+    () =>
+      preprocess(source, effectPreprocess(), {
+        filename: "RenderTagInvalid.svelte",
+      }),
+    Error,
+    `{@render ...} must still resolve to a call expression`,
+  );
+});
+
+Deno.test("rewrites attach tags through the markup AST pass", async () => {
+  const source = `<script lang="ts" effect>
+  import { Effect } from "effect";
+  const attach = () => {};
+</script>
+
+<div {@attach yield* Effect.succeed(attach)}></div>
+`;
+
+  const result = await preprocess(source, effectPreprocess(), {
+    filename: "AttachTag.svelte",
+  });
+
+  assertStringIncludes(
+    result.code,
+    `{@attach __svelteEffectRuntimeMarkupValue(`,
+  );
+});
+
+Deno.test("rewrites regex literal expressions through Babel boundary detection", async () => {
+  const source = `<script lang="ts" effect>
+  import { Effect } from "effect";
+</script>
+
+<p>{yield* Effect.succeed(/}/.test("}"))}</p>
+
+{#if yield* Effect.succeed(/}/.test("}"))}
+  <p>shown</p>
+{/if}
+
+{@html yield* Effect.succeed(/}/.source)}
+`;
+
+  const result = await preprocess(source, effectPreprocess(), {
+    filename: "RegexBoundaries.svelte",
+  });
+
+  assertStringIncludes(
+    result.code,
+    `<p>{__svelteEffectRuntimeMarkupValue(`,
+  );
+  assertStringIncludes(
+    result.code,
+    `{#if __svelteEffectRuntimeMarkupValue(`,
+  );
+  assertStringIncludes(
+    result.code,
+    `{@html __svelteEffectRuntimeMarkupValue(`,
+  );
+});
+
+Deno.test("rewrites #each and #await headers when regex literals contain keyword text", async () => {
+  const source = `<script lang="ts" effect>
+  import { Effect } from "effect";
+</script>
+
+{#each yield* Effect.succeed(/ as /.source.split(" ")) as item}
+  <p>{item}</p>
+{/each}
+
+{#await yield* Effect.succeed(Promise.resolve(/ then /.source)) then value}
+  <p>{value}</p>
+{/await}
+`;
+
+  const result = await preprocess(source, effectPreprocess(), {
+    filename: "KeywordRegexHeaders.svelte",
+  });
+
+  assertStringIncludes(
+    result.code,
+    `{#each __svelteEffectRuntimeMarkupValue(`,
+  );
+  assertStringIncludes(
+    result.code,
+    `{#await __svelteEffectRuntimeMarkupPromise(`,
+  );
+});
+
+Deno.test("rejects debug tags that depend on yield in markup", async () => {
+  const source = `<script lang="ts" effect>
+  import { Effect } from "effect";
+</script>
+
+{@debug yield* Effect.succeed(1)}
+`;
+
+  await assertRejects(
+    () =>
+      preprocess(source, effectPreprocess(), {
+        filename: "DebugTag.svelte",
+      }),
+    Error,
+    `{@debug ...} cannot depend on yield* in markup right now`,
   );
 });

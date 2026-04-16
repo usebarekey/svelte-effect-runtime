@@ -1,5 +1,6 @@
 import MagicString, { type SourceMap } from "magic-string";
-import { parse, type AST } from "svelte/compiler";
+import { parseExpression as parseBabelExpression } from "@babel/parser";
+import { type AST, parse } from "svelte/compiler";
 import ts from "typescript";
 import type { EffectPreprocessOptions } from "../preprocess.ts";
 
@@ -31,6 +32,7 @@ interface Replacement {
 interface MarkupCandidate {
   expressionText: string;
   placeholder: string;
+  placeholderExpression: string;
   start: number;
   end: number;
 }
@@ -40,6 +42,21 @@ interface WrappedExpression {
   offset: number;
   sourceFile: ts.SourceFile;
 }
+
+type BraceTagKind =
+  | "attach"
+  | "await"
+  | "closing"
+  | "const"
+  | "debug"
+  | "each"
+  | "else-if"
+  | "html"
+  | "if"
+  | "key"
+  | "plain"
+  | "render"
+  | "spread";
 
 export function transformEffectMarkup(
   content: string,
@@ -63,7 +80,7 @@ export function transformEffectMarkup(
   }
 
   const replacements = collectMarkupReplacements(
-    create_parse_safe_markup_source(sanitized.code),
+    createParseSafeMarkupSource(sanitized.code),
     sanitized.candidates,
     options.filename,
   );
@@ -86,19 +103,19 @@ export function transformEffectMarkup(
   };
 }
 
-function create_parse_safe_markup_source(content: string): string {
-  const excluded_ranges = findExcludedRanges(content);
+function createParseSafeMarkupSource(content: string): string {
+  const excludedRanges = findExcludedRanges(content);
 
-  if (excluded_ranges.length === 0) {
+  if (excludedRanges.length === 0) {
     return content;
   }
 
   let result = "";
   let cursor = 0;
 
-  for (const range of excluded_ranges) {
+  for (const range of excludedRanges) {
     result += content.slice(cursor, range.start);
-    result += mask_excluded_text(content.slice(range.start, range.end));
+    result += maskExcludedText(content.slice(range.start, range.end));
     cursor = range.end;
   }
 
@@ -106,7 +123,7 @@ function create_parse_safe_markup_source(content: string): string {
   return result;
 }
 
-function mask_excluded_text(text: string): string {
+function maskExcludedText(text: string): string {
   let result = "";
 
   for (const character of text) {
@@ -137,7 +154,11 @@ function sanitizeEffectMarkup(
       continue;
     }
 
-    const closingIndex = findClosingBrace(content, index + 1);
+    const closingIndex = findMarkupBraceClose(
+      content,
+      index,
+      filename,
+    );
 
     if (closingIndex === -1) {
       continue;
@@ -158,7 +179,7 @@ function sanitizeEffectMarkup(
       magicString.overwrite(
         candidate.start,
         candidate.end,
-        candidate.placeholder,
+        candidate.placeholderExpression,
       );
     }
 
@@ -218,50 +239,44 @@ function getCandidateForBraceTag(
 ): MarkupCandidate | undefined {
   const trimmed = inner.trimStart();
   const leadingWhitespaceLength = inner.length - trimmed.length;
+  const tag = getBraceTagInfo(trimmed);
 
   if (!containsYieldStarText(trimmed)) {
     return undefined;
   }
 
-  if (trimmed.startsWith("@const ")) {
+  if (tag.kind === "const") {
     const initializerRange = findConstInitializerRange(
-      trimmed.slice("@const ".length),
+      trimmed.slice(tag.prefixLength),
       filename,
     );
 
     return initializerRange
       ? makeMarkupCandidate(
-        openBraceIndex + 1 + leadingWhitespaceLength + "@const ".length +
+        openBraceIndex + 1 + leadingWhitespaceLength + tag.prefixLength +
           initializerRange.start,
-        openBraceIndex + 1 + leadingWhitespaceLength + "@const ".length +
+        openBraceIndex + 1 + leadingWhitespaceLength + tag.prefixLength +
           initializerRange.end,
-        trimmed.slice("@const ".length + initializerRange.start,
-          "@const ".length + initializerRange.end),
+        trimmed.slice(
+          tag.prefixLength + initializerRange.start,
+          tag.prefixLength + initializerRange.end,
+        ),
         helperIndex,
       )
       : undefined;
   }
 
-  if (trimmed.startsWith("#if ")) {
+  if (tag.kind === "if" || tag.kind === "else-if") {
     return makeMarkupCandidate(
-      openBraceIndex + 1 + leadingWhitespaceLength + "#if ".length,
+      openBraceIndex + 1 + leadingWhitespaceLength + tag.prefixLength,
       closeBraceIndex,
-      trimmed.slice("#if ".length),
+      trimmed.slice(tag.prefixLength),
       helperIndex,
     );
   }
 
-  if (trimmed.startsWith(":else if ")) {
-    return makeMarkupCandidate(
-      openBraceIndex + 1 + leadingWhitespaceLength + ":else if ".length,
-      closeBraceIndex,
-      trimmed.slice(":else if ".length),
-      helperIndex,
-    );
-  }
-
-  if (trimmed.startsWith("#each ")) {
-    const eachHeader = trimmed.slice("#each ".length);
+  if (tag.kind === "each") {
+    const eachHeader = trimmed.slice(tag.prefixLength);
     const asIndex = findTopLevelKeyword(eachHeader, " as ");
 
     if (asIndex === -1) {
@@ -271,77 +286,67 @@ function getCandidateForBraceTag(
     const listExpression = eachHeader.slice(0, asIndex);
 
     return makeMarkupCandidate(
-      openBraceIndex + 1 + leadingWhitespaceLength + "#each ".length,
-      openBraceIndex + 1 + leadingWhitespaceLength + "#each ".length +
+      openBraceIndex + 1 + leadingWhitespaceLength + tag.prefixLength,
+      openBraceIndex + 1 + leadingWhitespaceLength + tag.prefixLength +
         listExpression.length,
       listExpression,
       helperIndex,
     );
   }
 
-  if (trimmed.startsWith("#await ")) {
-    const awaitHeader = trimmed.slice("#await ".length);
+  if (tag.kind === "await") {
+    const awaitHeader = trimmed.slice(tag.prefixLength);
     const boundary = findAwaitBoundary(awaitHeader);
     const expressionText = boundary === -1
       ? awaitHeader
       : awaitHeader.slice(0, boundary);
 
     return makeMarkupCandidate(
-      openBraceIndex + 1 + leadingWhitespaceLength + "#await ".length,
-      openBraceIndex + 1 + leadingWhitespaceLength + "#await ".length +
+      openBraceIndex + 1 + leadingWhitespaceLength + tag.prefixLength,
+      openBraceIndex + 1 + leadingWhitespaceLength + tag.prefixLength +
         expressionText.length,
       expressionText,
       helperIndex,
     );
   }
 
-  if (trimmed.startsWith("@html ")) {
-    return makeMarkupCandidate(
-      openBraceIndex + 1 + leadingWhitespaceLength + "@html ".length,
-      closeBraceIndex,
-      trimmed.slice("@html ".length),
-      helperIndex,
+  if (tag.kind === "render") {
+    const renderExpression = trimmed.slice(tag.prefixLength);
+    assertRenderableMarkupExpression(
+      renderExpression,
+      filename,
+      inner,
     );
-  }
 
-  if (trimmed.startsWith("@render ")) {
-    throw new Error(
-      `${filename}: {@render ...} cannot depend on yield* in markup right now.\nMove the Effect code into <script effect> or a helper function instead.\n\nProblematic tag:\n{${inner}}`,
-    );
-  }
-
-  if (trimmed.startsWith("@attach ")) {
     return makeMarkupCandidate(
-      openBraceIndex + 1 + leadingWhitespaceLength + "@attach ".length,
+      openBraceIndex + 1 + leadingWhitespaceLength + tag.prefixLength,
       closeBraceIndex,
-      trimmed.slice("@attach ".length),
+      renderExpression,
       helperIndex,
-    );
-  }
-
-  if (trimmed.startsWith("#key ")) {
-    return makeMarkupCandidate(
-      openBraceIndex + 1 + leadingWhitespaceLength + "#key ".length,
-      closeBraceIndex,
-      trimmed.slice("#key ".length),
-      helperIndex,
+      "call",
     );
   }
 
   if (
-    trimmed.startsWith("/") || trimmed.startsWith(":then") ||
-    trimmed.startsWith(":catch") || trimmed === ":else"
+    tag.kind === "attach" || tag.kind === "html" || tag.kind === "key" ||
+    tag.kind === "spread"
   ) {
-    return undefined;
-  }
-
-  if (trimmed.startsWith("...")) {
     return makeMarkupCandidate(
-      openBraceIndex + 1 + leadingWhitespaceLength + "...".length,
+      openBraceIndex + 1 + leadingWhitespaceLength + tag.prefixLength,
       closeBraceIndex,
-      trimmed.slice("...".length),
+      trimmed.slice(tag.prefixLength),
       helperIndex,
     );
+  }
+
+  if (tag.kind === "debug") {
+    throw new Error(
+      `${filename}: {@debug ...} cannot depend on yield* in markup right now.\nMove the Effect code into <script effect> or a helper binding instead.\n\nProblematic tag:\n{${inner}}`,
+    );
+  }
+
+  if (tag.kind === "closing") {
+    return undefined;
   }
 
   return makeMarkupCandidate(
@@ -357,12 +362,16 @@ function makeMarkupCandidate(
   end: number,
   expressionText: string,
   helperIndex: number,
+  placeholderShape: "identifier" | "call" = "identifier",
 ): MarkupCandidate {
   const placeholder = `${MARKUP_HELPER_PREFIX}Placeholder${helperIndex}`;
 
   return {
     expressionText,
     placeholder,
+    placeholderExpression: placeholderShape === "call"
+      ? `${placeholder}()`
+      : placeholder,
     start,
     end,
   };
@@ -409,7 +418,12 @@ function visitFragment(
   ) => void,
 ): void {
   for (const node of fragment.nodes) {
-    visitNode(node, candidatesByPlaceholder, matchedPlaceholders, onReplacement);
+    visitNode(
+      node,
+      candidatesByPlaceholder,
+      matchedPlaceholders,
+      onReplacement,
+    );
   }
 }
 
@@ -426,6 +440,7 @@ function visitNode(
     case "ExpressionTag":
     case "HtmlTag":
     case "AttachTag":
+    case "RenderTag":
       emitReplacementForExpression(
         node.expression,
         "plain",
@@ -609,6 +624,16 @@ function visitAttribute(
       );
       return;
 
+    case "AttachTag":
+      emitReplacementForExpression(
+        attribute.expression,
+        "plain",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      return;
+
     case "SpreadAttribute":
     case "AnimateDirective":
     case "BindDirective":
@@ -700,11 +725,10 @@ function emitReplacementForExpression(
     kind: "plain" | "each" | "await" | "event",
   ) => void,
 ): void {
-  if (!expression || expression.type !== "Identifier" || !expression.name) {
-    return;
-  }
-
-  const candidate = candidatesByPlaceholder.get(expression.name);
+  const candidate = findCandidateForExpression(
+    expression,
+    candidatesByPlaceholder,
+  );
 
   if (!candidate || matchedPlaceholders.has(candidate.placeholder)) {
     return;
@@ -712,6 +736,66 @@ function emitReplacementForExpression(
 
   matchedPlaceholders.add(candidate.placeholder);
   onReplacement(candidate, kind);
+}
+
+function findCandidateForExpression(
+  expression:
+    | { type: string; name?: string; callee?: { type: string; name?: string } }
+    | null
+    | undefined,
+  candidatesByPlaceholder: ReadonlyMap<string, MarkupCandidate>,
+): MarkupCandidate | undefined {
+  if (!expression) {
+    return undefined;
+  }
+
+  if (expression.type === "Identifier" && expression.name) {
+    return candidatesByPlaceholder.get(expression.name);
+  }
+
+  if (
+    expression.type === "CallExpression" &&
+    expression.callee?.type === "Identifier" &&
+    expression.callee.name
+  ) {
+    return candidatesByPlaceholder.get(expression.callee.name);
+  }
+
+  return undefined;
+}
+
+function assertRenderableMarkupExpression(
+  expressionText: string,
+  filename: string,
+  originalTagContents: string,
+): void {
+  const wrapped = parseWrappedExpression(expressionText, filename);
+  const expression = unwrapParentheses(wrapped.expression);
+
+  if (isRenderableMarkupExpression(expression)) {
+    return;
+  }
+
+  throw new Error(
+    `${filename}: {@render ...} must still resolve to a call expression when using yield* in markup.\n` +
+      `Supported examples: {@render yield* snippet()}, {@render (yield* snippet())}, {@render snippet(yield* arg())}.\n\n` +
+      `Problematic tag:\n{${originalTagContents}}`,
+  );
+}
+
+function isRenderableMarkupExpression(expression: ts.Expression): boolean {
+  const unwrapped = unwrapParentheses(expression);
+
+  if (ts.isCallExpression(unwrapped)) {
+    return true;
+  }
+
+  if (ts.isYieldExpression(unwrapped) && unwrapped.asteriskToken) {
+    return !!unwrapped.expression &&
+      ts.isCallExpression(unwrapParentheses(unwrapped.expression));
+  }
+
+  return false;
 }
 
 function findConstInitializerRange(
@@ -996,6 +1080,80 @@ function containsYieldStarText(text: string): boolean {
   return /\byield\s*\*/.test(text);
 }
 
+function findMarkupBraceClose(
+  content: string,
+  openBraceIndex: number,
+  filename: string,
+): number {
+  const expressionClose = findExpressionBraceCloseWithBabel(
+    content,
+    openBraceIndex,
+    filename,
+  );
+
+  if (expressionClose !== undefined) {
+    return expressionClose;
+  }
+
+  return findClosingBrace(content, openBraceIndex + 1);
+}
+
+function findExpressionBraceCloseWithBabel(
+  content: string,
+  openBraceIndex: number,
+  filename: string,
+): number | undefined {
+  const tail = content.slice(openBraceIndex + 1);
+  const trimmed = tail.trimStart();
+  const leadingWhitespaceLength = tail.length - trimmed.length;
+  const prefixLength = getBabelExpressionPrefixLength(trimmed);
+
+  if (prefixLength === undefined) {
+    return undefined;
+  }
+
+  const expressionTail = trimmed.slice(prefixLength);
+  const boundary = findBabelExpressionBoundary(expressionTail, filename);
+  const closeIndex = openBraceIndex + 1 + leadingWhitespaceLength +
+    prefixLength + boundary;
+
+  return content[closeIndex] === "}" ? closeIndex : undefined;
+}
+
+function getBabelExpressionPrefixLength(trimmed: string): number | undefined {
+  const tag = getBraceTagInfo(trimmed);
+
+  return tag.kind === "await" || tag.kind === "closing" ||
+      tag.kind === "const" || tag.kind === "each"
+    ? undefined
+    : tag.prefixLength;
+}
+
+function findBabelExpressionBoundary(
+  text: string,
+  filename: string,
+): number {
+  try {
+    parseBabelExpression(text, {
+      sourceFilename: filename,
+      sourceType: "module",
+      allowAwaitOutsideFunction: true,
+      allowYieldOutsideFunction: true,
+    });
+    return text.length;
+  } catch (error) {
+    if (
+      error instanceof SyntaxError &&
+      "pos" in error &&
+      typeof error.pos === "number"
+    ) {
+      return error.pos;
+    }
+
+    throw error;
+  }
+}
+
 function findExcludedRanges(content: string): ExcludedRange[] {
   const ranges: ExcludedRange[] = [];
   const patterns = [
@@ -1157,89 +1315,96 @@ function findClosingBrace(content: string, start: number): number {
 }
 
 function findTopLevelKeyword(text: string, keyword: string): number {
-  let braceDepth = 0;
-  let bracketDepth = 0;
-  let parenDepth = 0;
-  let quote: "'" | '"' | "`" | undefined;
+  const boundary = findBabelExpressionBoundary(text, "MarkupBoundary.svelte");
 
-  for (let index = 0; index <= text.length - keyword.length; index += 1) {
-    const character = text[index];
-    const nextCharacter = text[index + 1];
-
-    if (quote) {
-      if (character === "\\" && nextCharacter) {
-        index += 1;
-        continue;
-      }
-
-      if (character === quote) {
-        quote = undefined;
-      }
-
-      continue;
-    }
-
-    if (character === "'" || character === '"' || character === "`") {
-      quote = character;
-      continue;
-    }
-
-    if (character === "(") {
-      parenDepth += 1;
-      continue;
-    }
-
-    if (character === ")") {
-      parenDepth -= 1;
-      continue;
-    }
-
-    if (character === "[") {
-      bracketDepth += 1;
-      continue;
-    }
-
-    if (character === "]") {
-      bracketDepth -= 1;
-      continue;
-    }
-
-    if (character === "{") {
-      braceDepth += 1;
-      continue;
-    }
-
-    if (character === "}") {
-      braceDepth -= 1;
-      continue;
-    }
-
-    if (
-      braceDepth === 0 && bracketDepth === 0 && parenDepth === 0 &&
-      text.startsWith(keyword, index)
-    ) {
-      return index;
-    }
+  if (boundary >= text.length) {
+    return -1;
   }
 
-  return -1;
+  if (!text.startsWith(keyword.trimStart(), boundary)) {
+    return -1;
+  }
+
+  return trimTrailingWhitespaceIndex(text, boundary);
+}
+
+function trimTrailingWhitespaceIndex(text: string, end: number): number {
+  let index = end;
+
+  while (index > 0 && /\s/.test(text[index - 1] ?? "")) {
+    index -= 1;
+  }
+
+  return index;
 }
 
 function findAwaitBoundary(text: string): number {
   const thenIndex = findTopLevelKeyword(text, " then ");
-  const catchIndex = findTopLevelKeyword(text, " catch ");
 
-  if (thenIndex === -1) {
-    return catchIndex;
-  }
-
-  if (catchIndex === -1) {
+  if (thenIndex !== -1) {
     return thenIndex;
   }
 
-  return Math.min(thenIndex, catchIndex);
+  return findTopLevelKeyword(text, " catch ");
 }
 
+function getBraceTagInfo(trimmed: string): {
+  kind: BraceTagKind;
+  prefixLength: number;
+} {
+  if (trimmed.startsWith("@const ")) {
+    return { kind: "const", prefixLength: "@const ".length };
+  }
+
+  if (trimmed.startsWith("#if ")) {
+    return { kind: "if", prefixLength: "#if ".length };
+  }
+
+  if (trimmed.startsWith(":else if ")) {
+    return { kind: "else-if", prefixLength: ":else if ".length };
+  }
+
+  if (trimmed.startsWith("#each ")) {
+    return { kind: "each", prefixLength: "#each ".length };
+  }
+
+  if (trimmed.startsWith("#await ")) {
+    return { kind: "await", prefixLength: "#await ".length };
+  }
+
+  if (trimmed.startsWith("@html ")) {
+    return { kind: "html", prefixLength: "@html ".length };
+  }
+
+  if (trimmed.startsWith("@render ")) {
+    return { kind: "render", prefixLength: "@render ".length };
+  }
+
+  if (trimmed.startsWith("@attach ")) {
+    return { kind: "attach", prefixLength: "@attach ".length };
+  }
+
+  if (trimmed.startsWith("#key ")) {
+    return { kind: "key", prefixLength: "#key ".length };
+  }
+
+  if (trimmed.startsWith("@debug ")) {
+    return { kind: "debug", prefixLength: "@debug ".length };
+  }
+
+  if (trimmed.startsWith("...")) {
+    return { kind: "spread", prefixLength: "...".length };
+  }
+
+  if (
+    trimmed.startsWith("/") || trimmed.startsWith(":then") ||
+    trimmed.startsWith(":catch") || trimmed === ":else"
+  ) {
+    return { kind: "closing", prefixLength: 0 };
+  }
+
+  return { kind: "plain", prefixLength: 0 };
+}
 
 function isEventAttribute(name: string): boolean {
   return name.startsWith("on:") ||

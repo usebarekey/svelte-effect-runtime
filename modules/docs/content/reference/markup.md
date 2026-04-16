@@ -12,6 +12,9 @@ The markup transform handles supported `yield*` expressions outside `<script eff
 - key blocks
 - spread attributes
 - const tags
+- `@render`
+
+`@render` remains call-only after lowering. Supported forms include `{@render yield* snippet()}` and `{@render (yield* snippet())}`.
 
 ## Semantics
 

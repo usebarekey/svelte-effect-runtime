@@ -17,6 +17,7 @@
     "$app/server": "./internal/app-server-shim.ts",
     "effect": "npm:effect@^3.21.0",
     "effect/": "npm:/effect@^3.21.0/",
+    "@babel/parser": "npm:@babel/parser@^7.29.2",
     "devalue": "npm:devalue@^5.5.0",
     "svelte": "npm:svelte@^5.55.1",
     "svelte/": "npm:/svelte@^5.55.1/",
