@@ -342,7 +342,7 @@ Deno.test("rewrites render tags through the markup AST pass", async () => {
 
   assertStringIncludes(
     result.code,
-    `{@render __svelteEffectRuntimeMarkupValue(`,
+    `{@render (__svelteEffectRuntimeMarkupValue(`,
   );
 });
 
@@ -365,7 +365,7 @@ Deno.test("rewrites parenthesized yield render tags that still resolve to calls"
 
   assertStringIncludes(
     result.code,
-    `{@render __svelteEffectRuntimeMarkupValue(`,
+    `{@render (__svelteEffectRuntimeMarkupValue(`,
   );
 });
 

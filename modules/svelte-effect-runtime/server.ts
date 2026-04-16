@@ -234,11 +234,18 @@ export const ServerRuntime: ServerRuntimeSeed = {
 };
 
 export function get_server_runtime_or_throw(): ServerManagedRuntime {
-  if (current_server_runtime === null) {
-    throw new Error(
-      "No server Effect runtime found. Call ServerRuntime.make(...) from src/hooks.server.ts via `export const init = () => { ... }` before executing remote functions.",
-    );
+  if (current_server_runtime !== null) {
+    return current_server_runtime;
   }
+
+  // No runtime registered — lazily create a default one with an empty layer.
+  // This mirrors the client runtime behavior and makes `ServerRuntime.make()`
+  // in `hooks.server.ts` optional for apps that don't need to provide custom
+  // dependencies. A later explicit call to `ServerRuntime.make(...)` will
+  // dispose this default and replace it.
+  current_server_runtime = ManagedRuntime.make(
+    pipe_server_runtime() as unknown as Layer.Layer<unknown, unknown, never>,
+  );
 
   return current_server_runtime;
 }

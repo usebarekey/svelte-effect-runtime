@@ -4,9 +4,9 @@ Server runtime APIs provide the Effect environment for remote functions.
 
 ```ts
 import {
-  ServerRuntime,
+  get_server_runtime_or_throw,
   RequestEvent,
-  get_server_runtime_or_throw
+  ServerRuntime,
 } from "svelte-effect-runtime";
 ```
 
@@ -26,21 +26,48 @@ interface ServerRuntimeSeed {
 ```
 
 ```ts
-export type RequestEventService =
-  ReturnType<typeof get_native_request_event>;
+export type RequestEventService = ReturnType<typeof get_native_request_event>;
 
 export const RequestEvent: Context.Tag<
   RequestEventService,
   RequestEventService
 >;
 
-export function get_server_runtime_or_throw():
-  ManagedRuntime.ManagedRuntime<unknown, unknown>;
+export function get_server_runtime_or_throw(): ManagedRuntime.ManagedRuntime<
+  unknown,
+  unknown
+>;
 ```
 
 ## Semantics
 
 - `ServerRuntime.make(...)` constructs the active server runtime immediately.
+- `get_server_runtime_or_throw()` returns the active runtime if one has already
+  been registered.
+- If no runtime has been registered yet, `get_server_runtime_or_throw()` lazily
+  creates a default runtime with an empty layer.
 - Calling it again replaces the active server runtime.
 - `RequestEvent` is provided automatically during remote execution.
 - Inside a remote Effect, use `yield* RequestEvent`.
+
+## Default runtime
+
+Calling `ServerRuntime.make()` from `hooks.server.ts` is **optional**. When no
+runtime has been registered, the first remote Effect that executes creates a
+default runtime automatically. This is sufficient for remote functions that do
+not depend on any custom services.
+
+`RequestEvent` is still provided automatically during remote execution. Call
+`ServerRuntime.make(...)` only when you need to provide additional `Context`
+services or layers:
+
+```ts
+// src/hooks.server.ts
+import { ServerRuntime } from "svelte-effect-runtime";
+import { MyApi } from "$lib/my-api";
+import { Layer } from "effect";
+
+export const init = () => {
+  ServerRuntime.make(Layer.provide(MyApi.Live));
+};
+```

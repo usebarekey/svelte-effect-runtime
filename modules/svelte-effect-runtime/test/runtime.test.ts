@@ -143,7 +143,7 @@ Deno.test("component unmount cancels the running effect", async () => {
   }
 });
 
-Deno.test("missing providers throw a clear runtime error", async () => {
+Deno.test("effect components with no provided services mount via the default runtime", async () => {
   const dom = installDom();
 
   try {
@@ -162,11 +162,11 @@ Deno.test("missing providers throw a clear runtime error", async () => {
       { runtimeModuleId },
     );
 
-    await assertRejects(
-      () => mountComponent(module, dom.document.body),
-      Error,
-      "No Effect runtime found.",
-    );
+    const app = await mountComponent(module, dom.document.body);
+    await flushEffects();
+
+    assertStringIncludes(dom.document.body.textContent ?? "", "1");
+    await destroyComponent(app);
   } finally {
     dom.cleanup();
   }
@@ -581,5 +581,94 @@ Deno.test("ClientRuntime unions multiple provided services into one runtime", as
     assertEquals(value, [42, "ready"]);
   } finally {
     await runtime.dispose();
+  }
+});
+
+Deno.test("{@render yield* fn(arg)} mounts the returned snippet", async () => {
+  const dom = installDom();
+
+  try {
+    const module = await compileFixtureModule(
+      {
+        "App.svelte": `<script lang="ts">
+  import { ClientRuntime } from "${runtimeModuleId}";
+  import Demo from "./Demo.svelte";
+
+  ClientRuntime.make();
+</script>
+
+<Demo />
+`,
+        "Demo.svelte": `<script lang="ts" effect>
+  import { Effect } from "effect";
+
+  let current = $state("A");
+
+  function pickSnippet(value: string) {
+    return Effect.succeed(value === "A" ? snippetA : snippetB);
+  }
+</script>
+
+{#snippet snippetA()}
+  <p data-key="a">alpha</p>
+{/snippet}
+
+{#snippet snippetB()}
+  <p data-key="b">beta</p>
+{/snippet}
+
+<div>
+  {@render yield* pickSnippet(current)}
+</div>
+`,
+      },
+      "App.svelte",
+      { runtimeModuleId },
+    );
+
+    const app = await mountComponent(module, dom.document.body);
+    for (let iteration = 0; iteration < 4; iteration += 1) {
+      await flushEffects();
+    }
+
+    assertStringIncludes(dom.document.body.textContent ?? "", "alpha");
+    await destroyComponent(app);
+  } finally {
+    dom.cleanup();
+  }
+});
+
+Deno.test("effect components mount without an explicit ClientRuntime.make() call", async () => {
+  const dom = installDom();
+
+  try {
+    const module = await compileFixtureModule(
+      {
+        "App.svelte": `<script lang="ts">
+  import Counter from "./Counter.svelte";
+</script>
+
+<Counter />
+`,
+        "Counter.svelte": `<script lang="ts" effect>
+  import { Effect } from "effect";
+
+  const value = yield* Effect.succeed(7);
+</script>
+
+<p>{value}</p>
+`,
+      },
+      "App.svelte",
+      { runtimeModuleId },
+    );
+
+    const app = await mountComponent(module, dom.document.body);
+    await flushEffects();
+
+    assertStringIncludes(dom.document.body.textContent ?? "", "7");
+    await destroyComponent(app);
+  } finally {
+    dom.cleanup();
   }
 });

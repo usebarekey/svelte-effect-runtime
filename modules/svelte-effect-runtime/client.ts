@@ -198,13 +198,17 @@ export function getEffectRuntimeOrThrow<
     return current_client_runtime as T;
   }
 
-  if (!has_runtime_context()) {
-    throw new Error(
-      "No Effect runtime found. Call ClientRuntime.make(...) from src/hooks.client.ts via `export const init = () => { ... }` before mounting a <script effect> component.",
-    );
-  }
-
-  return getContext<T>(EFFECT_RUNTIME_CONTEXT);
+  // No runtime registered — lazily create a default one with an empty layer.
+  // This makes `ClientRuntime.make()` in `hooks.client.ts` optional for apps
+  // that don't need to provide custom dependencies. A later explicit call to
+  // `ClientRuntime.make(...)` will dispose this default and replace it.
+  const default_runtime = track_client_runtime(
+    ManagedRuntime.make(
+      Layer.empty as unknown as Layer.Layer<unknown, unknown, never>,
+    ),
+  );
+  current_client_runtime = default_runtime;
+  return default_runtime as unknown as T;
 }
 
 export function runComponentEffect<A, E, R>(

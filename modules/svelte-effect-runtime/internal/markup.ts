@@ -379,7 +379,7 @@ function makeMarkupCandidate(
 
 function makeAstReplacement(
   candidate: MarkupCandidate,
-  kind: "plain" | "each" | "await" | "event",
+  kind: "plain" | "each" | "await" | "event" | "render",
   filename: string,
 ): Replacement {
   if (kind === "event") {
@@ -395,11 +395,25 @@ function makeAstReplacement(
   const depsText = deps.length === 0 ? "[]" : `[${deps.join(", ")}]`;
   const trimmedExpression = candidate.expressionText.trim();
 
-  const replacementText = kind === "await"
-    ? `${MARKUP_HELPER_PREFIX}Promise("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); })`
-    : `${MARKUP_HELPER_PREFIX}Value("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); }, ${
-      kind === "each" ? "[]" : "undefined"
-    })`;
+  let replacementText: string;
+
+  if (kind === "await") {
+    replacementText =
+      `${MARKUP_HELPER_PREFIX}Promise("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); })`;
+  } else if (kind === "render") {
+    // Svelte 5 compiles `{@render X(args)}` as a snippet call that prepends
+    // the anchor node and thunks each argument. Wrapping in `(... )()` makes
+    // Svelte emit `$.snippet(node, () => Value(...))` instead, so our helper
+    // receives its real arguments (id, deps, factory, fallback) and the
+    // returned snippet is invoked with the anchor by Svelte's snippet runtime.
+    replacementText =
+      `(${MARKUP_HELPER_PREFIX}Value("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); }, undefined))()`;
+  } else {
+    replacementText =
+      `${MARKUP_HELPER_PREFIX}Value("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); }, ${
+        kind === "each" ? "[]" : "undefined"
+      })`;
+  }
 
   return {
     start: candidate.start,
@@ -414,7 +428,7 @@ function visitFragment(
   matchedPlaceholders: Set<string>,
   onReplacement: (
     candidate: MarkupCandidate,
-    kind: "plain" | "each" | "await" | "event",
+    kind: "plain" | "each" | "await" | "event" | "render",
   ) => void,
 ): void {
   for (const node of fragment.nodes) {
@@ -433,17 +447,26 @@ function visitNode(
   matchedPlaceholders: Set<string>,
   onReplacement: (
     candidate: MarkupCandidate,
-    kind: "plain" | "each" | "await" | "event",
+    kind: "plain" | "each" | "await" | "event" | "render",
   ) => void,
 ): void {
   switch (node.type) {
     case "ExpressionTag":
     case "HtmlTag":
     case "AttachTag":
-    case "RenderTag":
       emitReplacementForExpression(
         node.expression,
         "plain",
+        candidatesByPlaceholder,
+        matchedPlaceholders,
+        onReplacement,
+      );
+      return;
+
+    case "RenderTag":
+      emitReplacementForExpression(
+        node.expression,
+        "render",
         candidatesByPlaceholder,
         matchedPlaceholders,
         onReplacement,
@@ -598,7 +621,7 @@ function visitAttribute(
   matchedPlaceholders: Set<string>,
   onReplacement: (
     candidate: MarkupCandidate,
-    kind: "plain" | "each" | "await" | "event",
+    kind: "plain" | "each" | "await" | "event" | "render",
   ) => void,
 ): void {
   switch (attribute.type) {
@@ -679,12 +702,12 @@ function visitAttributeValue(
     | true
     | AST.ExpressionTag
     | Array<AST.Text | AST.ExpressionTag>,
-  kind: "plain" | "each" | "await" | "event",
+  kind: "plain" | "each" | "await" | "event" | "render",
   candidatesByPlaceholder: ReadonlyMap<string, MarkupCandidate>,
   matchedPlaceholders: Set<string>,
   onReplacement: (
     candidate: MarkupCandidate,
-    kind: "plain" | "each" | "await" | "event",
+    kind: "plain" | "each" | "await" | "event" | "render",
   ) => void,
 ): void {
   if (value === true) {
@@ -717,12 +740,12 @@ function visitAttributeValue(
 
 function emitReplacementForExpression(
   expression: { type: string; name?: string } | null | undefined,
-  kind: "plain" | "each" | "await" | "event",
+  kind: "plain" | "each" | "await" | "event" | "render",
   candidatesByPlaceholder: ReadonlyMap<string, MarkupCandidate>,
   matchedPlaceholders: Set<string>,
   onReplacement: (
     candidate: MarkupCandidate,
-    kind: "plain" | "each" | "await" | "event",
+    kind: "plain" | "each" | "await" | "event" | "render",
   ) => void,
 ): void {
   const candidate = findCandidateForExpression(

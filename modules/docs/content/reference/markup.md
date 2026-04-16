@@ -14,7 +14,7 @@ The markup transform handles supported `yield*` expressions outside `<script eff
 - const tags
 - `@render`
 
-`@render` remains call-only after lowering. Supported forms include `{@render yield* snippet()}` and `{@render (yield* snippet())}`.
+`@render` remains call-only after lowering. Supported forms include `{@render yield* snippet()}` and `{@render (yield* snippet())}`. The snippet returned by the effect is rendered reactively — the render block re-evaluates once the effect resolves, and again whenever its dependencies change.
 
 ## Semantics
 

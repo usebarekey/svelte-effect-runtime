@@ -76,7 +76,9 @@ import { Lightbulb } from "lucide-vue-next";
 <div class="ser-callout">
   <Lightbulb class="ser-callout__icon" :size="20" />
   <p class="ser-callout__text">
-    Note that this step is optional.
+    Registering a runtime in `hooks.client.ts` or `hooks.server.ts` is optional.
+    A default empty-layer runtime is created lazily when nothing has been
+    registered yet.
   </p>
 </div>
 
@@ -96,7 +98,8 @@ export const init = () => {
 
 ### Creating the server runtime
 
-For the server, you create your runtime in your `hooks.server.ts`:
+For the server, create your runtime in `hooks.server.ts` when your remote
+Effects need custom services:
 
 ```ts
 import { ServerRuntime } from "svelte-effect-runtime";

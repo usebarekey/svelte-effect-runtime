@@ -72,4 +72,21 @@ export function registerHotDispose(
 - If called from `hooks.client.ts`, the runtime is stored globally for subsequent effect components.
 - If called from a component, the runtime is also placed into Svelte context and disposed on component destroy.
 - Calling `ClientRuntime.make(...)` again replaces the active client runtime.
-- `getEffectRuntimeOrThrow()` first checks Svelte context, then the global runtime created from `hooks.client.ts`.
+- `getEffectRuntimeOrThrow()` first checks Svelte context, then the global runtime. If neither is set, a default runtime with an empty layer is created automatically — `ClientRuntime.make()` is optional and only needed when you want to provide custom services or layers.
+
+## Default runtime
+
+Calling `ClientRuntime.make()` from `hooks.client.ts` is **optional**. When no runtime has been registered, the first `<script effect>` component to mount creates a default runtime automatically. This is sufficient for effects that do not depend on any custom services.
+
+If your effects use `Context` services, call `ClientRuntime.make(...)` with the appropriate layers before any component mounts:
+
+```ts
+// src/hooks.client.ts
+import { ClientRuntime } from "svelte-effect-runtime";
+import { MyApi } from "$lib/my-api";
+import { Layer } from "effect";
+
+export const init = () => {
+  ClientRuntime.make(Layer.provide(MyApi.Live));
+};
+```

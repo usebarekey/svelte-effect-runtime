@@ -2,8 +2,7 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
   title: "svelte-effect-runtime",
-  description:
-    "Effect for Svelte",
+  description: "Effect for Svelte",
   cleanUrls: true,
   lastUpdated: true,
   themeConfig: {
@@ -12,7 +11,7 @@ export default defineConfig({
         text: "Landing",
         items: [
           { text: "Getting Started", link: "/" },
-          { text: "Tooling", link: "/tooling"},
+          { text: "Tooling", link: "/tooling" },
         ],
       },
       {
@@ -22,6 +21,13 @@ export default defineConfig({
           { text: "Command", link: "/content/remote-functions/command" },
           { text: "Form", link: "/content/remote-functions/form" },
           { text: "Prerender", link: "/content/remote-functions/prerender" },
+        ],
+      },
+      {
+        text: "Runtimes",
+        items: [
+          { text: "Server", link: "/content/remote-functions/server" },
+          { text: "Client", link: "/content/remote-functions/client" },
         ],
       },
       {
@@ -41,8 +47,8 @@ export default defineConfig({
           { text: "script-effect", link: "/content/reference/script-effect" },
           { text: "markup", link: "/content/reference/markup" },
           { text: "tooling", link: "/content/reference/tooling" },
-        ]
-      }
+        ],
+      },
     ],
     socialLinks: [
       {
