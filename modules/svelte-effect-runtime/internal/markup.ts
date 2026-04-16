@@ -406,8 +406,10 @@ function makeAstReplacement(
     // Svelte emit `$.snippet(node, () => Value(...))` instead, so our helper
     // receives its real arguments (id, deps, factory, fallback) and the
     // returned snippet is invoked with the anchor by Svelte's snippet runtime.
+    // Use a no-op snippet as the fallback so SSR and the initial client render
+    // both have a callable snippet even before the Effect has resolved.
     replacementText =
-      `(${MARKUP_HELPER_PREFIX}Value("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); }, undefined))()`;
+      `(${MARKUP_HELPER_PREFIX}Value("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); }, function () {}))()`;
   } else {
     replacementText =
       `${MARKUP_HELPER_PREFIX}Value("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); }, ${
