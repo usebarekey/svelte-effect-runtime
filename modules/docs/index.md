@@ -30,6 +30,8 @@ syntax.
 In your `vite.config.ts` file, add the following:
 
 ```diff
++ import { effect } from "svelte-effect-runtime";
+
 export default defineConfig({ 
 -   plugins: [sveltekit()],
 +   plugins: [effect(), sveltekit()],
