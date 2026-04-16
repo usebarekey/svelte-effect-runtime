@@ -487,3 +487,33 @@ Deno.test("rejects debug tags that depend on yield in markup", async () => {
     `{@debug ...} cannot depend on yield* in markup right now`,
   );
 });
+
+Deno.test("preserves TypeScript snippet parameters while rewriting markup", async () => {
+  const source = `<script lang="ts" effect>
+  import { Effect } from "effect";
+  const map = {
+    intro: "one",
+    api: "two",
+  };
+</script>
+
+<p>{yield* Effect.succeed(1)}</p>
+
+{#snippet card(title: string, value: keyof typeof map)}
+  <button onclick={() => console.log(value)}>{title}</button>
+{/snippet}
+`;
+
+  const result = await preprocess(source, effectPreprocess(), {
+    filename: "TypedSnippet.svelte",
+  });
+
+  assertStringIncludes(
+    result.code,
+    `<p>{__svelteEffectRuntimeMarkupValue(`,
+  );
+  assertStringIncludes(
+    result.code,
+    `{#snippet card(title: string, value: keyof typeof map)}`,
+  );
+});

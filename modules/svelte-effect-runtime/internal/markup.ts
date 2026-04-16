@@ -104,7 +104,7 @@ export function transformEffectMarkup(
 }
 
 function createParseSafeMarkupSource(content: string): string {
-  const excludedRanges = findExcludedRanges(content);
+  const excludedRanges = findParseSafeMaskRanges(content);
 
   if (excludedRanges.length === 0) {
     return content;
@@ -1176,6 +1176,61 @@ function findExcludedRanges(content: string): ExcludedRange[] {
   }
 
   return ranges.sort((left, right) => left.start - right.start);
+}
+
+function findParseSafeMaskRanges(content: string): ExcludedRange[] {
+  return [
+    ...findTagBodyRanges(content, "script"),
+    ...findTagBodyRanges(content, "style"),
+    ...findCommentRanges(content),
+  ].sort((left, right) => left.start - right.start);
+}
+
+function findTagBodyRanges(
+  content: string,
+  tagName: "script" | "style",
+): ExcludedRange[] {
+  const ranges: ExcludedRange[] = [];
+  const pattern = new RegExp(
+    `<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}\\s*>`,
+    "gi",
+  );
+
+  for (const match of content.matchAll(pattern)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    const fullMatch = match[0];
+    const body = match[1] ?? "";
+    const openTagEnd = fullMatch.indexOf(">") + 1;
+    const start = match.index + openTagEnd;
+
+    ranges.push({
+      start,
+      end: start + body.length,
+    });
+  }
+
+  return ranges;
+}
+
+function findCommentRanges(content: string): ExcludedRange[] {
+  const ranges: ExcludedRange[] = [];
+  const pattern = /<!--[\s\S]*?-->/g;
+
+  for (const match of content.matchAll(pattern)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    ranges.push({
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+
+  return ranges;
 }
 
 function findExcludedRangeAt(
