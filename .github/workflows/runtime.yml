@@ -112,12 +112,6 @@ jobs:
         with:
           node-version: 22
 
-      - name: setup_npm
-        shell: bash
-        run: |
-          npm install --global npm@^11.5.1
-          npm --version
-
       - name: build_runtime
         working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
         run: deno task build
@@ -132,4 +126,5 @@ jobs:
             printf '//registry.npmjs.org/:_authToken=%s\n' "${NPM_TOKEN}" > "${HOME}/.npmrc"
           fi
 
-          npm publish --access public --provenance
+          npx -y npm@11.5.1 --version
+          npx -y npm@11.5.1 publish --access public --provenance
