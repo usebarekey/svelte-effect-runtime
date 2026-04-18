@@ -41,7 +41,7 @@ makes it easy to write data to the server. It takes a callback that receives
 
 ```ts [src/routes/blog/data.remote.ts]
 import { Effect, Schema } from "effect";
-import { Query } from "svelte-effect-runtime";
+import { Form } from "svelte-effect-runtime";
 import { Database } from "$lib/server/database";
 import { User } from "$lib/server/hooks/user";
 import { NotSignedInError } from "$lib/common/errors";
