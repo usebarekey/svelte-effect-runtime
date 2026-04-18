@@ -2,7 +2,7 @@ import MagicString, { type SourceMap } from "magic-string";
 import { parseExpression as parseBabelExpression } from "@babel/parser";
 import { type AST, parse } from "svelte/compiler";
 import ts from "typescript";
-import type { EffectPreprocessOptions } from "../preprocess.ts";
+import type { EffectPreprocessOptions } from "$/preprocess.ts";
 
 const DEFAULT_RUNTIME_MODULE_ID = "svelte-effect-runtime";
 const DEFAULT_EFFECT_MODULE_ID = "effect";
@@ -409,7 +409,7 @@ function makeAstReplacement(
     // Use a no-op snippet as the fallback so SSR and the initial client render
     // both have a callable snippet even before the Effect has resolved.
     replacementText =
-      `(${MARKUP_HELPER_PREFIX}Value("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); }, function () {}))()`;
+          `(${MARKUP_HELPER_PREFIX}Value("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); }, function () {}))()`;
   } else {
     replacementText =
       `${MARKUP_HELPER_PREFIX}Value("${helperId}", ${depsText}, function* () { return (${trimmedExpression}); }, ${
@@ -1545,7 +1545,7 @@ function makeMarkupHelperBlock(
   return [
     `import { Effect as ${MARKUP_HELPER_PREFIX}Effect } from "${effectModuleId}";`,
     `import { onDestroy as ${MARKUP_HELPER_PREFIX}OnDestroy } from "${svelteModuleId}";`,
-    `import { getEffectRuntimeOrThrow as ${MARKUP_HELPER_PREFIX}GetRuntime, registerHotDispose as ${MARKUP_HELPER_PREFIX}RegisterHotDispose, runComponentEffect as ${MARKUP_HELPER_PREFIX}RunComponentEffect, runInlineEffect as ${MARKUP_HELPER_PREFIX}RunInlineEffect } from "${runtimeModuleId}";`,
+    `import { get_effect_runtime_or_throw as ${MARKUP_HELPER_PREFIX}GetRuntime, run_component_effect as ${MARKUP_HELPER_PREFIX}RunComponentEffect, run_inline_effect as ${MARKUP_HELPER_PREFIX}RunInlineEffect } from "${runtimeModuleId}";`,
     "",
     `const ${MARKUP_HELPER_PREFIX}Values = Object.create(null);`,
     `const ${MARKUP_HELPER_PREFIX}Promises = Object.create(null);`,
@@ -1684,7 +1684,7 @@ function makeMarkupHelperBlock(
     "}",
     "",
     `${MARKUP_HELPER_PREFIX}OnDestroy(${MARKUP_HELPER_PREFIX}CleanupAll);`,
-    `${MARKUP_HELPER_PREFIX}RegisterHotDispose(import.meta, ${MARKUP_HELPER_PREFIX}CleanupAll);`,
+    `import.meta.hot?.dispose(${MARKUP_HELPER_PREFIX}CleanupAll);`,
   ].join("\n");
 }
 

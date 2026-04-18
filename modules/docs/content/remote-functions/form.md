@@ -41,6 +41,7 @@ makes it easy to write data to the server. It takes a callback that receives
 
 ```ts [src/routes/blog/data.remote.ts]
 import { Effect, Schema } from "effect";
+import { redirect } from "@sveltejs/kit";
 import { Form } from "svelte-effect-runtime";
 import { Database } from "$lib/server/database";
 import { User } from "$lib/server/hooks/user";
@@ -51,23 +52,28 @@ export const create_post = Form(
     title: Schema.String,
     content: Schema.String,
   }),
-  Effect.gen(function* ({ title, content }) {
-    const db = yield* Database;
-    const user = yield* User;
+  ({ data, invalid }) =>
+    Effect.gen(function* () {
+      const db = yield* Database;
+      const user = yield* User;
 
-    if (!(yield* user.is_signed_in())) {
-      return yield* Effect.fail(new NotSignedInError());
-    }
+      if (!data.title.trim()) {
+        return yield* invalid.title("Please enter a title.");
+      }
 
-    const slug = title.toLowerCase().replace(/ /g, "-");
+      if (!(yield* user.is_signed_in())) {
+        return yield* Effect.fail(new NotSignedInError());
+      }
 
-    await db.sql`
-      insert into posts (slug, title, content)
-      values (${slug}, ${title}, ${content})
-    `;
+      const slug = data.title.toLowerCase().replace(/ /g, "-");
 
-    redirect(303, `/blog/${slug}`);
-  }),
+      await db.sql`
+        insert into posts (slug, title, content)
+        values (${slug}, ${data.title}, ${data.content})
+      `;
+
+      redirect(303, `/blog/${slug}`);
+    }),
 );
 ```
 
@@ -82,14 +88,25 @@ export const create_post = Form(
 <form {...create_post}>
   <label>
 		<h2>Title</h2>
-		<input {...createPost.fields.title.as("text")} />
+		<input {...create_post.fields.title.as("text")} />
 	</label>
 
   <label>
 		<h2>Write your post</h2>
-		<textarea {...createPost.fields.content.as("text")}></textarea>
+		<textarea {...create_post.fields.content.as("text")}></textarea>
 	</label>
 
   <button>Publish!</button>
 </form>
 ```
+
+The callback receives an object with:
+
+- `data`: the submitted form payload, already decoded into a plain object
+- `invalid`: helpers for producing validation failures like
+  `yield* invalid.title("Required")` or `yield* invalid.form("Try again")`
+
+If you are using `.remote.ts` forms, make sure
+`kit.experimental.remoteFunctions = true` is enabled in `svelte.config.js`.
+
+:::

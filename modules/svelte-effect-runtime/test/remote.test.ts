@@ -1,11 +1,13 @@
 import { assertEquals, assertExists } from "@std/assert";
 import * as devalue from "devalue";
 import * as Cause from "effect/Cause";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { to_effect, to_native } from "../client.ts";
+import { to_transportable_data } from "../internal/effect-compat.ts";
 import {
   create_remote_command_adapter,
   create_remote_form_adapter,
@@ -14,7 +16,9 @@ import {
 import {
   EFFECT_REMOTE_ERROR_MARKER,
   type FormIssue,
+  type RemoteDomainError,
 } from "../internal/remote-shared.ts";
+import { normalize_remote_helper_error } from "../v3/server.ts";
 import { create_effect_transport } from "../server.ts";
 import { installDom } from "./helpers.ts";
 
@@ -59,6 +63,31 @@ Deno.test("create_effect_transport round-trips schema-backed classes", () => {
 
   assertEquals(decoded instanceof Post, true);
   assertEquals(decoded.title, "hello");
+});
+
+Deno.test("to_transportable_data normalizes tagged Effect errors for devalue", () => {
+  class ProviderBusyError extends Data.TaggedError("ProviderBusyError")<{
+    readonly provider: string;
+    readonly retryAfterMs: number;
+  }> {}
+
+  const encoded = devalue.stringify(
+    to_transportable_data(
+      new ProviderBusyError({
+        provider: "github",
+        retryAfterMs: 1500,
+      }),
+    ),
+  );
+  const decoded = devalue.parse(encoded) as {
+    readonly _tag: string;
+    readonly provider: string;
+    readonly retryAfterMs: number;
+  };
+
+  assertEquals(decoded._tag, "ProviderBusyError");
+  assertEquals(decoded.provider, "github");
+  assertEquals(decoded.retryAfterMs, 1500);
 });
 
 Deno.test("query adapter decodes domain failures into the Effect error channel", async () => {
@@ -110,6 +139,56 @@ Deno.test("query adapter decodes domain failures into the Effect error channel",
   );
 
   assertEquals(to_native(get_post) instanceof Function, true);
+});
+
+Deno.test("query adapter supports catchTag over transported remote domain errors", async () => {
+  const payload = {
+    _tag: "ProviderBusyError",
+    provider: "github",
+    retryAfterMs: 1500,
+  };
+  const encoded = devalue.stringify(payload);
+  const query_factory = create_remote_query_adapter(
+    () => () =>
+      Promise.reject({
+        body: {
+          [EFFECT_REMOTE_ERROR_MARKER]: true,
+          encoded,
+          message: "Effect remote failure",
+        },
+        status: 503,
+      }),
+    (serialized) => devalue.parse(serialized),
+  );
+  const get_provider = query_factory("hash/get_provider") as () =>
+    Effect.Effect<
+      unknown,
+      RemoteDomainError<{
+        _tag: "ProviderBusyError";
+        provider: string;
+        retryAfterMs: number;
+      }>,
+      never
+    >;
+
+  const result = await Effect.runPromise(
+    get_provider().pipe(
+      Effect.catchTag("RemoteDomainError", (error) =>
+        Effect.succeed({
+          matchedTag: error.cause._tag,
+          provider: error.cause.provider,
+          retryAfterMs: error.cause.retryAfterMs,
+          status: error.status,
+        })),
+    ),
+  );
+
+  assertEquals(result, {
+    matchedTag: "ProviderBusyError",
+    provider: "github",
+    retryAfterMs: 1500,
+    status: 503,
+  });
 });
 
 Deno.test("to_effect preserves typed remote failures for native remote calls", async () => {
@@ -174,6 +253,28 @@ Deno.test("command adapter proxies pending and preserves native access", () => {
   assertEquals(to_native(command), native_command);
 });
 
+Deno.test("request-store crashes get remapped to a helpful remoteFunctions hint", () => {
+  const normalized = normalize_remote_helper_error(
+    new Error(
+      'Could not get the request store. In environments without "AsyncLocalStorage"...',
+    ),
+  );
+
+  assertEquals(normalized instanceof Error, true);
+  if (!(normalized instanceof Error)) {
+    throw new Error("Expected an Error instance.");
+  }
+
+  assertEquals(
+    normalized.message.includes("kit.experimental.remoteFunctions = true"),
+    true,
+  );
+  assertEquals(
+    normalized.message.includes("Enable that flag and restart Vite."),
+    true,
+  );
+});
+
 Deno.test("form adapter submit reuses native form state on success", async () => {
   const dom = installDom();
 
@@ -200,10 +301,11 @@ Deno.test("form adapter submit reuses native form state on success", async () =>
               await callback({
                 form,
                 data: {},
-                submit: () => Promise.resolve().then(() => {
-                  native_form.fields.allIssues = [];
-                  native_form.result = { slug: "hello" };
-                }),
+                submit: () =>
+                  Promise.resolve().then(() => {
+                    native_form.fields.allIssues = [];
+                    native_form.result = { slug: "hello" };
+                  }),
               });
             };
 
@@ -274,13 +376,14 @@ Deno.test("form adapter submit surfaces native form validation issues", async ()
               await callback({
                 form,
                 data: {},
-                submit: () => Promise.resolve().then(() => {
-                  native_form.fields.allIssues = [{
-                    message: "title too short",
-                    path: ["title"],
-                  }];
-                  native_form.result = undefined;
-                }),
+                submit: () =>
+                  Promise.resolve().then(() => {
+                    native_form.fields.allIssues = [{
+                      message: "title too short",
+                      path: ["title"],
+                    }];
+                    native_form.result = undefined;
+                  }),
               });
             };
 
@@ -382,7 +485,10 @@ Deno.test("form adapter wraps native non-configurable for() without redefining i
   const child = create_post.for("nested");
 
   assertEquals(typeof child.submit, "function");
-  assertEquals(child.native.action, "http://localhost/?/remote=hash%2Fcreate_post%2Fnested");
+  assertEquals(
+    child.native.action,
+    "http://localhost/?/remote=hash%2Fcreate_post%2Fnested",
+  );
   assertEquals(to_native(create_post), native_form);
 });
 
@@ -437,9 +543,13 @@ Deno.test("form adapter submit uses the attached native form instance when prese
       (serialized) => devalue.parse(serialized),
       create_form_dependencies(),
     );
-    const create_post = form_factory("hash/create_post") as Record<string | symbol, unknown> & {
-      submit(input: { title: string }): Effect.Effect<{ slug: string }, unknown, never>;
-    };
+    const create_post = form_factory("hash/create_post") as
+      & Record<string | symbol, unknown>
+      & {
+        submit(
+          input: { title: string },
+        ): Effect.Effect<{ slug: string }, unknown, never>;
+      };
     const form = document.createElement("form");
     const button = document.createElement("button");
     button.type = "submit";
@@ -449,8 +559,8 @@ Deno.test("form adapter submit uses the attached native form instance when prese
     const attach = Object.getOwnPropertySymbols(create_post)
       .map((key) => create_post[key])
       .find((value) => typeof value === "function") as
-      | ((form: HTMLFormElement) => void | (() => void))
-      | undefined;
+        | ((form: HTMLFormElement) => void | (() => void))
+        | undefined;
 
     if (!attach) {
       throw new Error("Expected wrapped form attachment.");

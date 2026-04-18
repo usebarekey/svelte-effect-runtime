@@ -1,198 +1,50 @@
-import {
-  type Options as SveltePluginOptions,
-  svelte,
-} from "@sveltejs/vite-plugin-svelte";
-import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
-import process from "node:process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+/**
+ * Public Vite entrypoint wrappers for `svelte-effect-runtime`.
+ *
+ * @example
+ * ```ts
+ * import { sveltekit_effect_runtime } from "svelte-effect-runtime/vite";
+ *
+ * export default {
+ *   plugins: [sveltekit_effect_runtime()],
+ * };
+ * ```
+ *
+ * @module
+ */
 import type { Plugin } from "vite";
 import {
-  effectPreprocess,
-  type EffectPreprocessOptions,
-} from "./preprocess.ts";
+  svelte_effect_runtime as create_svelte_effect_runtime,
+  type SvelteEffectRuntimeOptions,
+  sveltekit_effect_runtime as create_sveltekit_effect_runtime,
+  type SveltekitEffectRuntimeOptions,
+} from "$/v3/vite.ts";
 
-export interface SvelteEffectRuntimeOptions {
-  effect?: EffectPreprocessOptions;
-  svelte?: SveltePluginOptions;
-}
+export type {
+  SvelteEffectRuntimeOptions,
+  SveltekitEffectRuntimeOptions,
+} from "$/v3/vite.ts";
 
-export interface SveltekitEffectRuntimeOptions {
-  /**
-   * Override the client-side module SvelteKit uses for generated `.remote.ts`
-   * imports so remote calls default to Effect-returning adapters.
-   */
-  remoteModuleId?: string;
-}
-
-const ROOT_PACKAGE_ID = "svelte-effect-runtime";
-const INTERNAL_SERVER_PACKAGE_ID = "svelte-effect-runtime/_server";
-const SERVER_SOURCE_PATTERN =
-  /(?:^|\/)(?:hooks\.server\.[cm]?[jt]s|.+\.server\.[cm]?[jt]s|.+\.remote\.[cm]?[jt]s)$/;
-
-function arrayify<T>(value: T | T[] | undefined): T[] {
-  if (value === undefined) {
-    return [];
-  }
-
-  return Array.isArray(value) ? value : [value];
-}
-
-export function svelteEffectRuntime(
-  options: SvelteEffectRuntimeOptions = {},
+/**
+ * Compose the low-level Svelte preprocessor directly into a plain Vite +
+ * Svelte project.
+ *
+ * @see https://ser.barekey.dev/content/reference/tooling
+ */
+export function svelte_effect_runtime(
+  options?: SvelteEffectRuntimeOptions,
 ): Plugin[] {
-  const existingPreprocessors = arrayify(options.svelte?.preprocess);
-
-  return svelte({
-    ...options.svelte,
-    preprocess: [
-      effectPreprocess(options.effect),
-      ...existingPreprocessors,
-    ],
-  });
+  return create_svelte_effect_runtime(options);
 }
 
-function resolve_runtime_internal_path(
-  source_relative_path: string,
-  dist_relative_path: string,
-): string {
-  const relative_path = import.meta.url.endsWith(".ts")
-    ? source_relative_path
-    : dist_relative_path;
-
-  return fileURLToPath(new URL(relative_path, import.meta.url));
-}
-
-function resolve_kit_internal_runtime_path(relative_path: string): string {
-  const runtime_require = createRequire(resolve(process.cwd(), "package.json"));
-  const kit_package_path = runtime_require.resolve(
-    "@sveltejs/kit/package.json",
-  );
-  const kit_root = dirname(kit_package_path);
-
-  return pathToFileURL(resolve(kit_root, relative_path)).href;
-}
-
-function create_remote_runtime_module_code(): string {
-  const adapter_module_path = resolve_runtime_internal_path(
-    "./internal/remote-client.ts",
-    "./internal/remote-client.js",
-  );
-  const kit_query_module_path = resolve_kit_internal_runtime_path(
-    "src/runtime/client/remote-functions/query.svelte.js",
-  );
-  const kit_command_module_path = resolve_kit_internal_runtime_path(
-    "src/runtime/client/remote-functions/command.svelte.js",
-  );
-  const kit_form_module_path = resolve_kit_internal_runtime_path(
-    "src/runtime/client/remote-functions/form.svelte.js",
-  );
-  const kit_prerender_module_path = resolve_kit_internal_runtime_path(
-    "src/runtime/client/remote-functions/prerender.svelte.js",
-  );
-  const kit_shared_module_path = resolve_kit_internal_runtime_path(
-    "src/runtime/client/remote-functions/shared.svelte.js",
-  );
-  const kit_client_module_path = resolve_kit_internal_runtime_path(
-    "src/runtime/client/client.js",
-  );
-  const kit_form_utils_module_path = resolve_kit_internal_runtime_path(
-    "src/runtime/form-utils.js",
-  );
-  const kit_shared_runtime_module_path = resolve_kit_internal_runtime_path(
-    "src/runtime/shared.js",
-  );
-
-  return `
-import * as devalue from "devalue";
-import { base, app_dir } from "$app/paths/internal/client";
-import { query as native_query, query_batch as native_query_batch } from ${
-    JSON.stringify(kit_query_module_path)
-  };
-import { command as native_command } from ${
-    JSON.stringify(kit_command_module_path)
-  };
-import { form as native_form } from ${JSON.stringify(kit_form_module_path)};
-import { prerender as native_prerender } from ${
-    JSON.stringify(kit_prerender_module_path)
-  };
-import {
-  apply_refreshes,
-  get_remote_request_headers,
-  remote_request
-} from ${JSON.stringify(kit_shared_module_path)};
-import { app, invalidateAll, _goto } from ${
-    JSON.stringify(kit_client_module_path)
-  };
-import { BINARY_FORM_CONTENT_TYPE, serialize_binary_form } from ${
-    JSON.stringify(kit_form_utils_module_path)
-  };
-import { stringify_remote_arg } from ${
-    JSON.stringify(kit_shared_runtime_module_path)
-  };
-import {
-  create_remote_command_adapter,
-  create_remote_form_adapter,
-  create_remote_query_adapter
-} from ${JSON.stringify(adapter_module_path)};
-
-const decode_payload = (encoded) => devalue.parse(encoded, app?.decoders ?? {});
-const request_dependencies = {
-  app,
-  app_dir,
-  apply_refreshes,
-  base,
-  get_remote_request_headers,
-  remote_request,
-  stringify_remote_arg
-};
-
-export const query = create_remote_query_adapter(native_query, decode_payload, request_dependencies, "query");
-export const query_batch = create_remote_query_adapter(native_query_batch, decode_payload, request_dependencies, "query_batch");
-export const command = create_remote_command_adapter(native_command, decode_payload, request_dependencies);
-export const prerender = create_remote_query_adapter(native_prerender, decode_payload, request_dependencies, "prerender");
-export const form = create_remote_form_adapter(native_form, decode_payload, {
-  binary_form_content_type: BINARY_FORM_CONTENT_TYPE,
-  goto: _goto,
-  invalidate_all: invalidateAll,
-  serialize_binary_form,
-  ...request_dependencies
-});
-`;
-}
-
-export function sveltekitEffectRuntime(
-  options: SveltekitEffectRuntimeOptions = {},
+/**
+ * Install the remote-function adapter that rewrites SvelteKit remote helpers
+ * to return `Effect` values.
+ *
+ * @see https://ser.barekey.dev/content/reference/tooling
+ */
+export function sveltekit_effect_runtime(
+  options?: SveltekitEffectRuntimeOptions,
 ): Plugin {
-  const remote_module_id = options.remoteModuleId ??
-    "\0svelte-effect-runtime:remote";
-
-  return {
-    name: "svelte-effect-runtime-remote",
-    enforce: "pre",
-    resolveId(id) {
-      if (id === "__sveltekit/remote") {
-        return remote_module_id;
-      }
-    },
-    load(id) {
-      if (id !== remote_module_id) {
-        return;
-      }
-
-      return create_remote_runtime_module_code();
-    },
-    transform(code, id) {
-      const filename = id.split("?", 1)[0];
-      if (!SERVER_SOURCE_PATTERN.test(filename)) {
-        return null;
-      }
-
-      if (!code.includes(ROOT_PACKAGE_ID)) {
-        return null;
-      }
-
-      return code.replaceAll(ROOT_PACKAGE_ID, INTERNAL_SERVER_PACKAGE_ID);
-    },
-  };
+  return create_sveltekit_effect_runtime(options);
 }

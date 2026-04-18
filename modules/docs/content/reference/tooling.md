@@ -1,8 +1,19 @@
 # tooling
 
-Tooling support spans preprocess, Vite integration, language-server wiring, and the VSIX extension.
+Tooling support spans preprocess, Vite integration, language-server wiring, and
+the VSIX extension.
 
 ## Vite layer
+
+These are advanced subpath exports. Most SvelteKit apps should use `effect()`
+from `"svelte-effect-runtime"` and compose it with `sveltekit()`.
+
+```ts
+import {
+  svelte_effect_runtime,
+  sveltekit_effect_runtime,
+} from "svelte-effect-runtime/vite";
+```
 
 ```ts
 export interface SvelteEffectRuntimeOptions {
@@ -14,18 +25,18 @@ export interface SveltekitEffectRuntimeOptions {
   remoteModuleId?: string;
 }
 
-export function svelteEffectRuntime(
-  options?: SvelteEffectRuntimeOptions
+export function svelte_effect_runtime(
+  options?: SvelteEffectRuntimeOptions,
 ): Plugin[];
 
-export function sveltekitEffectRuntime(
-  options?: SveltekitEffectRuntimeOptions
+export function sveltekit_effect_runtime(
+  options?: SveltekitEffectRuntimeOptions,
 ): Plugin;
 ```
 
 ## Notes
 
 - `effect()` is a companion plugin and should be composed with `sveltekit()`.
-- `effectPreprocess(...)` is the low-level source transform.
+- `effect_preprocess(...)` lives at `"svelte-effect-runtime/preprocess"`.
 - the custom language server and VSIX smooth over `yield*` syntax in editors
 - the Vite/SvelteKit build path is the source of truth

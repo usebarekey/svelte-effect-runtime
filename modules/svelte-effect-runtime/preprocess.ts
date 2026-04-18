@@ -1,51 +1,33 @@
+/**
+ * Public preprocess entrypoint for `svelte-effect-runtime`.
+ *
+ * @example
+ * ```ts
+ * import { effect_preprocess } from "svelte-effect-runtime/preprocess";
+ *
+ * export default {
+ *   preprocess: [effect_preprocess()],
+ * };
+ * ```
+ *
+ * @module
+ */
 import type { PreprocessorGroup } from "svelte/compiler";
-import { transformEffectMarkup } from "./internal/markup.ts";
-import { transformEffectScript } from "./internal/transform.ts";
+import {
+  effect_preprocess as create_effect_preprocess,
+  type EffectPreprocessOptions,
+} from "$/v3/preprocess.ts";
 
-export interface EffectPreprocessOptions {
-  runtimeModuleId?: string;
-  effectModuleId?: string;
-  svelteModuleId?: string;
-}
+export type { EffectPreprocessOptions } from "$/v3/preprocess.ts";
 
-export function effectPreprocess(
-  options: EffectPreprocessOptions = {},
+/**
+ * Low-level `.svelte` preprocessor used by the higher-level `effect()`
+ * plugin.
+ *
+ * @see https://ser.barekey.dev/content/reference/preprocess
+ */
+export function effect_preprocess(
+  options?: EffectPreprocessOptions,
 ): PreprocessorGroup {
-  return {
-    name: "svelte-effect-runtime",
-    markup({ content, filename }) {
-      const transformed = transformEffectMarkup(content, {
-        ...options,
-        filename: filename ?? "Component.svelte",
-      });
-
-      if (transformed.code === content) {
-        return;
-      }
-
-      return {
-        code: transformed.code,
-        map: transformed.map,
-      };
-    },
-    script({ content, attributes, filename }) {
-      if (
-        attributes.context === "module" || !Object.hasOwn(attributes, "effect")
-      ) {
-        return;
-      }
-
-      const { effect: _effect, ...nextAttributes } = attributes;
-      const transformed = transformEffectScript(content, {
-        ...options,
-        filename: filename ?? "Component.svelte",
-      });
-
-      return {
-        code: transformed.code,
-        map: transformed.map,
-        attributes: nextAttributes,
-      };
-    },
-  };
+  return create_effect_preprocess(options);
 }

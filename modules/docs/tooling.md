@@ -2,8 +2,13 @@
 
 ## VSIX extension
 
-You can download the VS Code/Cursor extension from
-[here](https://marketplace.visualstudio.com/items?itemName=Barekey.svelte-effect-runtime-vscode).
+### VS Code
+
+VS Code uses Visual Studio Marketplace and can be downloaded from [here](https://marketplace.visualstudio.com/items?itemName=Barekey.svelte-effect-runtime-vscode), or in VS Code.
+
+### Cursor
+
+Cursor uses OpenVSX and can be downloaded from [here](https://open-vsx.org/extension/barekey/svelte-effect-runtime-vscode), or in Cursor.
 
 ## LSP
 

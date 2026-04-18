@@ -12,7 +12,7 @@ Deno.test("remote type helpers compile", () => {
   const should_skip_runtime = typeof document !== "undefined";
 
   if (should_skip_runtime) {
-    Form(Create_post, ({ data, invalid }) => {
+    const create_post = Form(Create_post, ({ data, invalid }) => {
       data.title satisfies string;
       invalid.title satisfies (
         message: string,
@@ -25,6 +25,12 @@ Deno.test("remote type helpers compile", () => {
         ok: true as const,
       });
     });
+
+    create_post.fields.title.as("text").value satisfies string | number;
+    create_post.fields.title.as("select").multiple satisfies false;
+    create_post.fields.body.issues() satisfies
+      | Array<{ message: string; path: Array<string | number> }>
+      | undefined;
 
     Query(() =>
       Effect.gen(function* () {

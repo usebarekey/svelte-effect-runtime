@@ -1,6 +1,7 @@
-import * as Effect from "effect/Effect";
+import { Effect } from "effect";
 import { tick } from "svelte";
-import { create_remote_effect_from_promise } from "../client.ts";
+import { create_remote_effect_from_promise } from "$/client.ts";
+import { create_async_effect } from "$internal/effect-compat.ts";
 import {
   create_remote_domain_error,
   create_remote_http_error,
@@ -11,7 +12,7 @@ import {
   is_serialized_remote_failure_envelope,
   REMOTE_ERROR_DECODER,
   type RemoteFailure,
-} from "./remote-shared.ts";
+} from "$internal/remote-shared.ts";
 
 type AnyCallable = (...args: Array<unknown>) => unknown;
 
@@ -40,7 +41,10 @@ interface Remote_request_dependencies {
   readonly apply_refreshes?: (value: string) => void;
   readonly base: string;
   readonly get_remote_request_headers: () => HeadersInit;
-  readonly remote_request: (url: string, headers: HeadersInit) => Promise<string>;
+  readonly remote_request: (
+    url: string,
+    headers: HeadersInit,
+  ) => Promise<string>;
   readonly stringify_remote_arg: (
     value: unknown,
     transport: unknown,
@@ -73,10 +77,46 @@ interface Attached_form_tracker {
   current: HTMLFormElement | null;
 }
 
+function is_development_environment(): boolean {
+  const vite_environment = (
+    import.meta as ImportMeta & {
+      env?: {
+        DEV?: boolean;
+      };
+    }
+  ).env;
+
+  if (typeof vite_environment?.DEV === "boolean") {
+    return vite_environment.DEV;
+  }
+
+  const node_process = (globalThis as typeof globalThis & {
+    process?: {
+      env?: {
+        DEV?: string;
+        NODE_ENV?: string;
+        SVELTE_EFFECT_RUNTIME_DEBUG?: string;
+      };
+    };
+  }).process;
+
+  return (
+    node_process?.env?.SVELTE_EFFECT_RUNTIME_DEBUG === "1" ||
+    node_process?.env?.DEV === "1" ||
+    node_process?.env?.NODE_ENV === "development"
+  );
+}
+
+const ENABLE_REMOTE_CLIENT_DEBUG_LOGS = is_development_environment();
+
 function log_remote_client_step(
   step: string,
   details?: Record<string, unknown>,
 ): void {
+  if (!ENABLE_REMOTE_CLIENT_DEBUG_LOGS) {
+    return;
+  }
+
   console.log("[svelte-effect-runtime][remote-client]", step, details ?? {});
 }
 
@@ -213,7 +253,11 @@ function stringify_remote_payload(
     return "";
   }
 
-  return dependencies.stringify_remote_arg(arg, get_transport(dependencies), sort);
+  return dependencies.stringify_remote_arg(
+    arg,
+    get_transport(dependencies),
+    sort,
+  );
 }
 
 async function execute_query_request<Success>(
@@ -223,10 +267,9 @@ async function execute_query_request<Success>(
   dependencies: Remote_request_dependencies,
 ): Promise<Success> {
   const payload = stringify_remote_payload(arg, dependencies);
-  const url =
-    `${dependencies.base}/${dependencies.app_dir}/remote/${id}${
-      payload ? `?payload=${payload}` : ""
-    }`;
+  const url = `${dependencies.base}/${dependencies.app_dir}/remote/${id}${
+    payload ? `?payload=${payload}` : ""
+  }`;
   const encoded = await dependencies.remote_request(
     url,
     dependencies.get_remote_request_headers(),
@@ -242,16 +285,19 @@ async function execute_query_batch_request<Success>(
   dependencies: Remote_request_dependencies,
 ): Promise<Success> {
   const payload = stringify_remote_payload(arg, dependencies);
-  const response = await fetch(`${dependencies.base}/${dependencies.app_dir}/remote/${id}`, {
-    method: "POST",
-    body: JSON.stringify({
-      payloads: [payload],
-    }),
-    headers: {
-      "Content-Type": "application/json",
-      ...dependencies.get_remote_request_headers(),
+  const response = await fetch(
+    `${dependencies.base}/${dependencies.app_dir}/remote/${id}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        payloads: [payload],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        ...dependencies.get_remote_request_headers(),
+      },
     },
-  });
+  );
 
   if (!response.ok) {
     throw new Error("Failed to execute batch query");
@@ -279,12 +325,14 @@ async function execute_query_batch_request<Success>(
     };
   }
 
-  const entries = decode_payload<Array<{
-    readonly data?: Success;
-    readonly error?: unknown;
-    readonly status?: number;
-    readonly type: string;
-  }>>(result.result ?? "");
+  const entries = decode_payload<
+    Array<{
+      readonly data?: Success;
+      readonly error?: unknown;
+      readonly status?: number;
+      readonly type: string;
+    }>
+  >(result.result ?? "");
   const first = entries[0];
 
   if (!first) {
@@ -308,10 +356,9 @@ async function execute_prerender_request<Success>(
   dependencies: Remote_request_dependencies,
 ): Promise<Success> {
   const payload = stringify_remote_payload(arg, dependencies);
-  const url =
-    `${dependencies.base}/${dependencies.app_dir}/remote/${id}${
-      payload ? `/${payload}` : ""
-    }`;
+  const url = `${dependencies.base}/${dependencies.app_dir}/remote/${id}${
+    payload ? `/${payload}` : ""
+  }`;
   const encoded = await dependencies.remote_request(
     url,
     dependencies.get_remote_request_headers(),
@@ -334,11 +381,26 @@ function create_query_request<Success>(
 
   switch (mode) {
     case "query":
-      return execute_query_request<Success>(id, arg, decode_payload, dependencies);
+      return execute_query_request<Success>(
+        id,
+        arg,
+        decode_payload,
+        dependencies,
+      );
     case "query_batch":
-      return execute_query_batch_request<Success>(id, arg, decode_payload, dependencies);
+      return execute_query_batch_request<Success>(
+        id,
+        arg,
+        decode_payload,
+        dependencies,
+      );
     case "prerender":
-      return execute_prerender_request<Success>(id, arg, decode_payload, dependencies);
+      return execute_prerender_request<Success>(
+        id,
+        arg,
+        decode_payload,
+        dependencies,
+      );
   }
 }
 
@@ -348,17 +410,20 @@ async function execute_command_request<Success>(
   decode_payload: Decode_remote_payload,
   dependencies: Remote_request_dependencies,
 ): Promise<Success> {
-  const response = await fetch(`${dependencies.base}/${dependencies.app_dir}/remote/${id}`, {
-    method: "POST",
-    body: JSON.stringify({
-      payload: stringify_remote_payload(arg, dependencies, false),
-      refreshes: [],
-    }),
-    headers: {
-      "Content-Type": "application/json",
-      ...dependencies.get_remote_request_headers(),
+  const response = await fetch(
+    `${dependencies.base}/${dependencies.app_dir}/remote/${id}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        payload: stringify_remote_payload(arg, dependencies, false),
+        refreshes: [],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        ...dependencies.get_remote_request_headers(),
+      },
     },
-  });
+  );
 
   if (!response.ok) {
     throw new Error("Failed to execute remote command");
@@ -461,7 +526,8 @@ export function create_remote_command_adapter(
 
     define_hidden_property(wrapped, "native", native_with_decoder);
     Object.defineProperty(wrapped, "pending", {
-      get: () => ((native as { pending?: number }).pending ?? 0) + local_pending,
+      get: () =>
+        ((native as { pending?: number }).pending ?? 0) + local_pending,
     });
 
     return wrapped;
@@ -771,7 +837,7 @@ function create_form_submit_effect<Success, ErrorType>(
   attached_form_tracker: Attached_form_tracker,
   _dependencies: Form_request_dependencies,
 ): Effect.Effect<Success, RemoteFailure<ErrorType>, never> {
-  return Effect.async<Success, RemoteFailure<ErrorType>>((resume) => {
+  return create_async_effect<Success, RemoteFailure<ErrorType>>((resume) => {
     log_remote_client_step("create_form_submit_effect:start", {
       action: form.native.action,
       input,
@@ -821,9 +887,12 @@ function create_form_submit_effect<Success, ErrorType>(
       const attached_form = attached_form_tracker.current;
 
       if (attached_form) {
-        log_remote_client_step("create_form_submit_effect:attached_form_branch", {
-          action: attached_form.action,
-        });
+        log_remote_client_step(
+          "create_form_submit_effect:attached_form_branch",
+          {
+            action: attached_form.action,
+          },
+        );
         void submit_attached_form<Success, ErrorType>(
           form,
           attached_form,
@@ -836,20 +905,29 @@ function create_form_submit_effect<Success, ErrorType>(
         return;
       }
 
-      log_remote_client_step("create_form_submit_effect:detached_fallback_branch", {
-        action: form.native.action,
-      });
+      log_remote_client_step(
+        "create_form_submit_effect:detached_fallback_branch",
+        {
+          action: form.native.action,
+        },
+      );
       const enhanced = form.native.enhance(async ({ submit }) => {
         try {
-          log_remote_client_step("create_form_submit_effect:fallback_submit:start", {
-            action: form.native.action,
-          });
+          log_remote_client_step(
+            "create_form_submit_effect:fallback_submit:start",
+            {
+              action: form.native.action,
+            },
+          );
           await submit();
           const issues = get_root_form_issues(form.native);
-          log_remote_client_step("create_form_submit_effect:fallback_submit:after", {
-            issues,
-            result: form.native.result,
-          });
+          log_remote_client_step(
+            "create_form_submit_effect:fallback_submit:after",
+            {
+              issues,
+              result: form.native.result,
+            },
+          );
 
           if (issues.length > 0) {
             finish(
@@ -910,7 +988,14 @@ function wrap_native_form(
     current: null,
   };
   const wrapped_symbol_properties = new Map<symbol, unknown>();
-  const wrapped = new Proxy({} as Record<string, unknown>, {
+  const proxy_target: Record<string, unknown> = {};
+  Object.defineProperty(proxy_target, "native", {
+    configurable: true,
+    enumerable: false,
+    value: native,
+    writable: false,
+  });
+  const wrapped = new Proxy(proxy_target, {
     get(_target, property, receiver) {
       if (property === "native") {
         return native;
@@ -1004,14 +1089,25 @@ function wrap_native_form(
       return Reflect.has(native, property);
     },
     ownKeys() {
-      return Reflect.ownKeys(native);
+      return Array.from(
+        new Set([
+          ...Reflect.ownKeys(native),
+          "native",
+          "submit",
+          "for",
+          ...wrapped_symbol_properties.keys(),
+        ]),
+      );
     },
-    getOwnPropertyDescriptor(_target, property) {
-      if (
-        property === "native" ||
-        property === "submit" ||
-        property === "for"
-      ) {
+    getOwnPropertyDescriptor(
+      _target,
+      property,
+    ): PropertyDescriptor | undefined {
+      if (property === "native") {
+        return Reflect.getOwnPropertyDescriptor(proxy_target, property);
+      }
+
+      if (property === "submit" || property === "for") {
         return {
           configurable: true,
           enumerable: false,

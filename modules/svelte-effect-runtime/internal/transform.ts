@@ -1,6 +1,6 @@
 import MagicString, { type SourceMap } from "magic-string";
 import ts from "typescript";
-import type { EffectPreprocessOptions } from "../preprocess.ts";
+import type { EffectPreprocessOptions } from "$/preprocess.ts";
 
 const DEFAULT_RUNTIME_MODULE_ID = "svelte-effect-runtime";
 const DEFAULT_EFFECT_MODULE_ID = "effect";
@@ -48,7 +48,6 @@ const HOISTED_KINDS = new Set<ts.SyntaxKind>([
 const HOISTED_CALL_IDENTIFIERS = new Set([
   "$effect",
   "__svelteEffectRuntimeMarkupOnDestroy",
-  "__svelteEffectRuntimeMarkupRegisterHotDispose",
   "onDestroy",
 ]);
 
@@ -541,7 +540,7 @@ function makeInjectedImports(options: TransformEffectScriptOptions): string {
   return [
     `import { onMount as __svelteEffectRuntimeOnMount } from "${svelteModuleId}";`,
     `import { Effect as __svelteEffectRuntimeEffect } from "${effectModuleId}";`,
-    `import { getEffectRuntimeOrThrow as __svelteEffectRuntimeGetRuntime, registerHotDispose as __svelteEffectRuntimeRegisterHotDispose, runComponentEffect as __svelteEffectRuntimeRunComponentEffect } from "${runtimeModuleId}";`,
+    `import { get_effect_runtime_or_throw as __svelteEffectRuntimeGetRuntime, run_component_effect as __svelteEffectRuntimeRunComponentEffect } from "${runtimeModuleId}";`,
     "",
   ].join("\n");
 }
@@ -562,7 +561,7 @@ function makeRuntimeBlock(statements: string[]): string {
     "    __svelteEffectRuntimeProgram,",
     "  );",
     "",
-    "  __svelteEffectRuntimeRegisterHotDispose(import.meta, __svelteEffectRuntimeCleanup);",
+    "  import.meta.hot?.dispose(__svelteEffectRuntimeCleanup);",
     "  return __svelteEffectRuntimeCleanup;",
     "});",
     "",
