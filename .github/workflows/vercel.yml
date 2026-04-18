@@ -31,7 +31,7 @@ jobs:
 
       - name: install_docs_dependencies
         working-directory: ${{ github.workspace }}/modules/docs
-        run: npm ci
+        run: npm install
 
       - name: build_docs
         working-directory: ${{ github.workspace }}/modules/docs
