@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { type FormError } from "../client.ts";
+import type { FormError } from "../client.ts";
 import { Form, Query, RequestEvent } from "../server.ts";
 
 const Create_post = Schema.Struct({

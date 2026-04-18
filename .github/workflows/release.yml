@@ -137,12 +137,20 @@ jobs:
           RUNTIME_VERSION="$(node -p "require('./modules/svelte-effect-runtime/package.json').version")"
           LSP_VERSION="$(node -p "require('./modules/svelte-effect-runtime-language-server/package.json').version")"
           VSIX_VERSION="$(node -p "require('./modules/svelte-effect-runtime-vscode-extension/package.json').version")"
+          JSR_VERSION="$(node -e "const fs=require('fs'); const config=JSON.parse(fs.readFileSync('./modules/svelte-effect-runtime/deno.json', 'utf8')); process.stdout.write(config.version ?? '')")"
+          JSR_NAME="$(node -e "const fs=require('fs'); const config=JSON.parse(fs.readFileSync('./modules/svelte-effect-runtime/deno.json', 'utf8')); process.stdout.write(config.name ?? '')")"
 
-          if [ "$RUNTIME_VERSION" != "$RELEASE_VERSION" ] || [ "$LSP_VERSION" != "$RELEASE_VERSION" ] || [ "$VSIX_VERSION" != "$RELEASE_VERSION" ]; then
+          if [ "$RUNTIME_VERSION" != "$RELEASE_VERSION" ] || [ "$LSP_VERSION" != "$RELEASE_VERSION" ] || [ "$VSIX_VERSION" != "$RELEASE_VERSION" ] || [ "$JSR_VERSION" != "$RELEASE_VERSION" ]; then
             echo "Package versions do not match release version ($RELEASE_VERSION)." >&2
             echo "runtime: $RUNTIME_VERSION" >&2
             echo "lsp: $LSP_VERSION" >&2
             echo "vsix: $VSIX_VERSION" >&2
+            echo "jsr: $JSR_VERSION" >&2
+            exit 1
+          fi
+
+          if [ "$JSR_NAME" != "@barekey/svelte-effect-runtime" ]; then
+            echo "Unexpected JSR package name: $JSR_NAME" >&2
             exit 1
           fi
 
@@ -172,14 +180,7 @@ jobs:
         working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
         run: deno task build
 
-      - name: prepare_runtime_for_jsr
-        if: ${{ vars.JSR_PACKAGE_NAME != '' }}
-        env:
-          JSR_PACKAGE_NAME: ${{ vars.JSR_PACKAGE_NAME }}
-        run: deno run -A ./build/jsr.ts
-
       - name: publish_runtime_to_jsr
-        if: ${{ vars.JSR_PACKAGE_NAME != '' }}
         working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
         run: npx jsr publish
 

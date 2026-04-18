@@ -1,4 +1,12 @@
 {
+  "name": "@barekey/svelte-effect-runtime",
+  "version": "1.2.3",
+  "license": "BSD-3-Clause",
+  "exports": {
+    ".": "./mod.ts",
+    "./_server": "./server.ts",
+    "./language-server": "./language-server.ts"
+  },
   "compilerOptions": {
     "lib": ["deno.ns", "dom", "dom.iterable", "es2022"]
   },
