@@ -5,8 +5,9 @@
   "version": "1.2.2",
   "publisher": "barekey",
   "license": "BSD-3-Clause",
+  "type": "module",
   "engines": {
-    "vscode": "^1.95.0"
+    "vscode": "^1.100.0"
   },
   "categories": [
     "Programming Languages",
@@ -22,10 +23,10 @@
   ],
   "files": [
     "dist",
-    "runtime",
+    "node_modules",
     "README.md"
   ],
-  "main": "./dist/extension.cjs",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
