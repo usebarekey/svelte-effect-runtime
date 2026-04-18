@@ -27,8 +27,13 @@
     "@sveltejs/vite-plugin-svelte": "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
     "@sveltejs/kit": "npm:@sveltejs/kit@^2.56.1",
     "@sveltejs/kit/": "npm:/@sveltejs/kit@^2.56.1/",
-    "@sveltejs/kit/internal/server": "npm:@sveltejs/kit/internal/server",
+    "@sveltejs/kit/internal/server": "npm:/@sveltejs/kit@^2.56.1/internal/server",
     "@sveltejs/adapter-static": "npm:@sveltejs/adapter-static@^3.0.10",
     "jsdom": "npm:jsdom@^26.1.0"
+  },
+  "publish": {
+    "exclude": [
+      "test/**"
+    ]
   }
 }

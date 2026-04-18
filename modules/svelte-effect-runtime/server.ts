@@ -1,4 +1,7 @@
-import { error as svelte_error, invalid as svelte_invalid } from "@sveltejs/kit";
+import {
+  error as svelte_error,
+  invalid as svelte_invalid,
+} from "@sveltejs/kit";
 import {
   command as native_command,
   form as native_form,
@@ -34,22 +37,30 @@ export interface Transporter<T = unknown, U = { value: unknown }> {
 export type Transport = Record<string, Transporter>;
 
 export interface RemoteFormInput {
-  [key: string]: string | number | boolean | File | RemoteFormInput | Array<
-    string | number | boolean | File | RemoteFormInput
-  >;
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | File
+    | RemoteFormInput
+    | Array<
+      string | number | boolean | File | RemoteFormInput
+    >;
 }
 
 export type RemoteQueryFunction<Input, Output> = (
   arg: OptionalArgument<Input>,
 ) => Promise<Output>;
 
-export type RemoteCommand<Input, Output> = ((
-  arg: OptionalArgument<Input>,
-) => Promise<Output> & {
-  updates(...updates: Array<unknown>): Promise<Output>;
-}) & {
-  readonly pending: number;
-};
+export type RemoteCommand<Input, Output> =
+  & ((
+    arg: OptionalArgument<Input>,
+  ) => Promise<Output> & {
+    updates(...updates: Array<unknown>): Promise<Output>;
+  })
+  & {
+    readonly pending: number;
+  };
 
 export type RemotePrerenderFunction<Input, Output> = (
   arg: OptionalArgument<Input>,
@@ -78,10 +89,15 @@ type RuntimeOperator = (
   self: Layer.Layer<unknown, unknown, unknown>,
 ) => Layer.Layer<unknown, unknown, unknown>;
 
-type RuntimeSeedLayer<Requirements> = Layer.Layer<Requirements, never, Requirements>;
+type RuntimeSeedLayer<Requirements> = Layer.Layer<
+  Requirements,
+  never,
+  Requirements
+>;
 
-type ProvidedBy<Op> = Op extends
-  (self: RuntimeSeedLayer<infer Requirements>) => Layer.Layer<unknown, unknown, infer Incoming>
+type ProvidedBy<Op> = Op extends (
+  self: RuntimeSeedLayer<infer Requirements>,
+) => Layer.Layer<unknown, unknown, infer Incoming>
   ? Exclude<Requirements, Incoming>
   : never;
 
@@ -105,32 +121,48 @@ type ApplyOperators<
 
 type FinalRuntimeLayer<Ops extends ReadonlyArray<RuntimeOperator>> =
   ApplyOperators<RuntimeSeedLayer<ProvidedByAll<Ops>>, Ops> extends infer Out
-    ? Out extends Layer.Layer<unknown, unknown, infer Incoming> ? [Incoming] extends [never] ? Out
+    ? Out extends Layer.Layer<unknown, unknown, infer Incoming>
+      ? [Incoming] extends [never] ? Out
       : never
     : never
     : never;
 
 type OptionalArgument<Input> = undefined extends Input ? Input | void : Input;
 
-type SchemaInput<SchemaType extends EffectSchema> = Schema.Schema.Encoded<SchemaType>;
-type SchemaOutput<SchemaType extends EffectSchema> = Schema.Schema.Type<SchemaType>;
+type SchemaInput<SchemaType extends EffectSchema> = Schema.Schema.Encoded<
+  SchemaType
+>;
+type SchemaOutput<SchemaType extends EffectSchema> = Schema.Schema.Type<
+  SchemaType
+>;
 
-type FieldHelpers<FormShape, SchemaType> = FormShape extends Record<string, unknown>
-  ? {
-      [Key in keyof FormShape as Key extends string ? Key : never]: (
-        message: string,
-      ) => Effect.Effect<never, FormError<SchemaType>, never>;
-    }
+type FieldHelpers<FormShape, SchemaType> = FormShape extends
+  Record<string, unknown> ? {
+    [Key in keyof FormShape as Key extends string ? Key : never]: (
+      message: string,
+    ) => Effect.Effect<never, FormError<SchemaType>, never>;
+  }
   : Record<PropertyKey, never>;
 
-export type Invalid<SchemaType = unknown> = {
-  form: (message: string) => Effect.Effect<never, FormError<SchemaType>, never>;
-} & FieldHelpers<SchemaType extends EffectSchema ? SchemaOutput<SchemaType> : unknown, SchemaType>;
+export type Invalid<SchemaType = unknown> =
+  & {
+    form: (
+      message: string,
+    ) => Effect.Effect<never, FormError<SchemaType>, never>;
+  }
+  & FieldHelpers<
+    SchemaType extends EffectSchema ? SchemaOutput<SchemaType> : unknown,
+    SchemaType
+  >;
 
 export type EffectQueryFunction<Input, Output, Error = never> =
   & ((
     arg: OptionalArgument<Input>,
-  ) => Effect.Effect<Output, import("./internal/remote-shared.ts").RemoteFailure<Error>, never>)
+  ) => Effect.Effect<
+    Output,
+    import("./internal/remote-shared.ts").RemoteFailure<Error>,
+    never
+  >)
   & {
     native: RemoteQueryFunction<Input, Output>;
   };
@@ -138,7 +170,11 @@ export type EffectQueryFunction<Input, Output, Error = never> =
 export type EffectCommand<Input, Output, Error = never> =
   & ((
     arg: OptionalArgument<Input>,
-  ) => Effect.Effect<Output, import("./internal/remote-shared.ts").RemoteFailure<Error>, never>)
+  ) => Effect.Effect<
+    Output,
+    import("./internal/remote-shared.ts").RemoteFailure<Error>,
+    never
+  >)
   & {
     native: RemoteCommand<Input, Output>;
     readonly pending: number;
@@ -147,7 +183,11 @@ export type EffectCommand<Input, Output, Error = never> =
 export type EffectPrerenderFunction<Input, Output, Error = never> =
   & ((
     arg: OptionalArgument<Input>,
-  ) => Effect.Effect<Output, import("./internal/remote-shared.ts").RemoteFailure<Error>, never>)
+  ) => Effect.Effect<
+    Output,
+    import("./internal/remote-shared.ts").RemoteFailure<Error>,
+    never
+  >)
   & {
     native: RemotePrerenderFunction<Input, Output>;
   };
@@ -160,15 +200,23 @@ export type EffectForm<
   native: RemoteForm<Input, Output>;
   submit(
     data: OptionalArgument<Input>,
-  ): Effect.Effect<Output, import("./internal/remote-shared.ts").RemoteFailure<Error>, never>;
-  for: RemoteForm<Input, Output>["for"] extends (...args: infer Args) => infer Result
+  ): Effect.Effect<
+    Output,
+    import("./internal/remote-shared.ts").RemoteFailure<Error>,
+    never
+  >;
+  for: RemoteForm<Input, Output>["for"] extends
+    (...args: infer Args) => infer Result
     ? (...args: Args) => EffectForm<Input, Output, Error>
     : never;
 };
 
 export type RequestEventService = ReturnType<typeof get_native_request_event>;
 
-export const RequestEvent = Context.GenericTag<RequestEventService>(
+export const RequestEvent: Context.Tag<
+  RequestEventService,
+  RequestEventService
+> = Context.GenericTag<RequestEventService>(
   "svelte-effect-runtime/RequestEvent",
 );
 
@@ -215,9 +263,9 @@ function make_server_runtime<
 function make_server_runtime(
   ...ops: [] | [RuntimeOperator, ...Array<RuntimeOperator>]
 ): void {
-  const layer = ops.length === 0
-    ? pipe_server_runtime()
-    : pipe_server_runtime(...(ops as [RuntimeOperator, ...Array<RuntimeOperator>]));
+  const layer = ops.length === 0 ? pipe_server_runtime() : pipe_server_runtime(
+    ...(ops as [RuntimeOperator, ...Array<RuntimeOperator>]),
+  );
 
   const previous_runtime = current_server_runtime;
 
@@ -359,7 +407,11 @@ async function run_remote_effect<Success, ErrorType, Requirements>(
     method: request_event.request.method,
     url: request_event.url.toString(),
   });
-  const provided_program = Effect.provideService(program, RequestEvent, request_event);
+  const provided_program = Effect.provideService(
+    program,
+    RequestEvent,
+    request_event,
+  );
   const exit = await runtime.runPromiseExit(provided_program);
 
   if (Exit.isSuccess(exit)) {
@@ -401,7 +453,9 @@ function create_invalid_helper<SchemaType = unknown>(
     readonly schema?: EffectSchema;
   } = {},
 ): Invalid<SchemaType> {
-  const field_names = options.schema ? new Set(get_schema_field_names(options.schema)) : null;
+  const field_names = options.schema
+    ? new Set(get_schema_field_names(options.schema))
+    : null;
 
   const create_issue_effect = (
     message: string,
@@ -417,7 +471,10 @@ function create_invalid_helper<SchemaType = unknown>(
       form(message: string) {
         return create_issue_effect(message, []);
       },
-    } as Record<string, (message: string) => Effect.Effect<never, FormError<SchemaType>, never>>,
+    } as Record<
+      string,
+      (message: string) => Effect.Effect<never, FormError<SchemaType>, never>
+    >,
     {
       get(target, property) {
         if (typeof property !== "string") {
@@ -442,7 +499,10 @@ function create_invalid_helper<SchemaType = unknown>(
   return invalid as Invalid<SchemaType>;
 }
 
-function define_native_property<T extends object, Native>(value: T, native: Native): T {
+function define_native_property<T extends object, Native>(
+  value: T,
+  native: Native,
+): T {
   Object.defineProperty(value, "native", {
     value: native,
     enumerable: false,
@@ -510,10 +570,15 @@ function create_native_wrapper(value: object) {
   return define_native_property(value, value);
 }
 
-function query_batch_factory(validate_or_fn: unknown, maybe_fn?: unknown): unknown {
+function query_batch_factory(
+  validate_or_fn: unknown,
+  maybe_fn?: unknown,
+): unknown {
   const resolved = resolve_remote_args(
     validate_or_fn,
-    maybe_fn as ((args: Array<unknown>) => Effect.Effect<unknown, unknown, unknown>) | undefined,
+    maybe_fn as
+      | ((args: Array<unknown>) => Effect.Effect<unknown, unknown, unknown>)
+      | undefined,
   );
 
   if (resolved.validate === undefined) {
@@ -544,26 +609,33 @@ function query_batch_factory(validate_or_fn: unknown, maybe_fn?: unknown): unkno
 const query_impl = (validate_or_fn: unknown, maybe_fn?: unknown): unknown => {
   const resolved = resolve_remote_args(
     validate_or_fn,
-    maybe_fn as ((arg: unknown) => Effect.Effect<unknown, unknown, unknown>) | undefined,
+    maybe_fn as
+      | ((arg: unknown) => Effect.Effect<unknown, unknown, unknown>)
+      | undefined,
   );
   const native = resolved.validate === undefined
     ? native_query(() =>
       run_remote_effect(
         (resolved.fn as () => Effect.Effect<unknown, unknown, unknown>)(),
-      ))
+      )
+    )
     : resolved.validate === "unchecked"
     ? native_query(
       "unchecked",
       (arg: unknown) =>
         run_remote_effect(
-          (resolved.fn as (arg: unknown) => Effect.Effect<unknown, unknown, unknown>)(arg),
+          (resolved.fn as (
+            arg: unknown,
+          ) => Effect.Effect<unknown, unknown, unknown>)(arg),
         ),
     )
     : native_query(
       get_effect_schema_validator(resolved.validate),
       (arg: unknown) =>
         run_remote_effect(
-          (resolved.fn as (arg: unknown) => Effect.Effect<unknown, unknown, unknown>)(arg),
+          (resolved.fn as (
+            arg: unknown,
+          ) => Effect.Effect<unknown, unknown, unknown>)(arg),
         ),
     );
 
@@ -577,26 +649,33 @@ export const Query = Object.assign(query_impl, {
 const command_impl = (validate_or_fn: unknown, maybe_fn?: unknown): unknown => {
   const resolved = resolve_remote_args(
     validate_or_fn,
-    maybe_fn as ((arg: unknown) => Effect.Effect<unknown, unknown, unknown>) | undefined,
+    maybe_fn as
+      | ((arg: unknown) => Effect.Effect<unknown, unknown, unknown>)
+      | undefined,
   );
   const native = resolved.validate === undefined
     ? native_command(() =>
       run_remote_effect(
         (resolved.fn as () => Effect.Effect<unknown, unknown, unknown>)(),
-      ))
+      )
+    )
     : resolved.validate === "unchecked"
     ? native_command(
       "unchecked",
       (arg: unknown) =>
         run_remote_effect(
-          (resolved.fn as (arg: unknown) => Effect.Effect<unknown, unknown, unknown>)(arg),
+          (resolved.fn as (
+            arg: unknown,
+          ) => Effect.Effect<unknown, unknown, unknown>)(arg),
         ),
     )
     : native_command(
       get_effect_schema_validator(resolved.validate),
       (arg: unknown) =>
         run_remote_effect(
-          (resolved.fn as (arg: unknown) => Effect.Effect<unknown, unknown, unknown>)(arg),
+          (resolved.fn as (
+            arg: unknown,
+          ) => Effect.Effect<unknown, unknown, unknown>)(arg),
         ),
     );
 
@@ -624,19 +703,24 @@ export const Command = command_impl as unknown as EffectCommandFactory;
 const form_impl = (validate_or_fn: unknown, maybe_fn?: unknown): unknown => {
   const resolved = resolve_remote_args(
     validate_or_fn,
-    maybe_fn as ((args: unknown) => Effect.Effect<unknown, unknown, unknown>) | undefined,
+    maybe_fn as
+      | ((args: unknown) => Effect.Effect<unknown, unknown, unknown>)
+      | undefined,
   );
   const native = resolved.validate === undefined
     ? native_form(() =>
       run_remote_effect(
         (resolved.fn as () => Effect.Effect<unknown, unknown, unknown>)(),
-      ))
+      )
+    )
     : resolved.validate === "unchecked"
     ? native_form(
       "unchecked",
       (data: RemoteFormInput) =>
         run_remote_effect(
-          (resolved.fn as (args: unknown) => Effect.Effect<unknown, unknown, unknown>)({
+          (resolved.fn as (
+            args: unknown,
+          ) => Effect.Effect<unknown, unknown, unknown>)({
             data,
             invalid: create_invalid_helper(),
           }),
@@ -646,7 +730,9 @@ const form_impl = (validate_or_fn: unknown, maybe_fn?: unknown): unknown => {
       get_effect_form_validator(resolved.validate as EffectSchema),
       (data: Record<string, unknown>) =>
         run_remote_effect(
-          (resolved.fn as (args: unknown) => Effect.Effect<unknown, unknown, unknown>)({
+          (resolved.fn as (
+            args: unknown,
+          ) => Effect.Effect<unknown, unknown, unknown>)({
             data,
             invalid: create_invalid_helper({
               schema: resolved.validate as EffectSchema,
@@ -753,14 +839,18 @@ const prerender_impl = (
 
   const resolved = resolve_remote_args(
     validate_or_fn,
-    fn_or_options as ((arg: unknown) => Effect.Effect<unknown, unknown, unknown>) | undefined,
+    fn_or_options as
+      | ((arg: unknown) => Effect.Effect<unknown, unknown, unknown>)
+      | undefined,
   );
   const native = resolved.validate === "unchecked"
     ? native_prerender_fn(
       "unchecked",
       (arg: unknown) =>
         run_remote_effect(
-          (resolved.fn as (arg: unknown) => Effect.Effect<unknown, unknown, unknown>)(arg),
+          (resolved.fn as (
+            arg: unknown,
+          ) => Effect.Effect<unknown, unknown, unknown>)(arg),
         ),
       maybe_options as RemotePrerenderOptions<unknown> | undefined,
     )
@@ -768,7 +858,9 @@ const prerender_impl = (
       get_effect_schema_validator(resolved.validate as EffectSchema),
       (arg: unknown) =>
         run_remote_effect(
-          (resolved.fn as (arg: unknown) => Effect.Effect<unknown, unknown, unknown>)(arg),
+          (resolved.fn as (
+            arg: unknown,
+          ) => Effect.Effect<unknown, unknown, unknown>)(arg),
         ),
       maybe_options as RemotePrerenderOptions<unknown> | undefined,
     );

@@ -51,7 +51,10 @@ export type {
 
 export interface ClientRuntimeService extends EffectRuntime<unknown> {}
 
-export const ClientRuntimeTag = Context.GenericTag<ClientRuntimeService>(
+export const ClientRuntimeTag: Context.Tag<
+  ClientRuntimeService,
+  ClientRuntimeService
+> = Context.GenericTag<ClientRuntimeService>(
   "svelte-effect-runtime/ClientRuntime",
 );
 
@@ -403,7 +406,11 @@ type AnyCallable = (...args: Array<unknown>) => unknown;
 export function to_effect<Success, ErrorType = never>(
   promise_like: PromiseLike<Success>,
 ): Effect.Effect<Success, RemoteFailure<ErrorType>, never>;
-export function to_effect<Args extends Array<unknown>, Success, ErrorType = never>(
+export function to_effect<
+  Args extends Array<unknown>,
+  Success,
+  ErrorType = never,
+>(
   fn: (...args: Args) => PromiseLike<Success>,
 ): (...args: Args) => Effect.Effect<Success, RemoteFailure<ErrorType>, never>;
 export function to_effect<Success, ErrorType = never>(
