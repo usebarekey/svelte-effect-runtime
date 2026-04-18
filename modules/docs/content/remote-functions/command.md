@@ -5,19 +5,16 @@ import { Command } from "svelte-effect-runtime";
 ```
 
 ```ts
-declare const Command:
-  & (<Output, ErrorType, Requirements>(
-    fn: () => Effect.Effect<Output, ErrorType, Requirements>,
-  ) => EffectCommand<void, Output, ErrorType>)
-  & (<Input, Output, ErrorType, Requirements>(
+declare const Command: (<Output, ErrorType, Requirements>(
+  fn: () => Effect.Effect<Output, ErrorType, Requirements>,
+) => EffectCommand<void, Output, ErrorType>) &
+  (<Input, Output, ErrorType, Requirements>(
     validate: "unchecked",
     fn: (arg: Input) => Effect.Effect<Output, ErrorType, Requirements>,
-  ) => EffectCommand<Input, Output, ErrorType>)
-  & (<SchemaType extends EffectSchema, Output, ErrorType, Requirements>(
+  ) => EffectCommand<Input, Output, ErrorType>) &
+  (<SchemaType extends EffectSchema, Output, ErrorType, Requirements>(
     validate: SchemaType,
-    fn: (
-      arg: SchemaOutput<SchemaType>,
-    ) => Effect.Effect<Output, ErrorType, Requirements>,
+    fn: (arg: SchemaOutput<SchemaType>) => Effect.Effect<Output, ErrorType, Requirements>,
   ) => EffectCommand<SchemaInput<SchemaType>, Output, ErrorType>);
 ```
 
@@ -49,24 +46,25 @@ export const like_post = Command(
   Schema.Struct({
     slug: Effect.String,
   }),
-  Effect.gen(function* () {
-    const db = yield* Database;
+  () =>
+    Effect.gen(function* () {
+      const db = yield* Database;
 
-    const [like] = yield* Database.sql`
+      const [like] = yield* Database.sql`
       update item
       set likes = likes + 1
       where id = ${id}
       returning
     `;
 
-    return yield* pipe(
-      like,
-      Option.fromNullable,
-      Option.match({
-        onNone: () => Effect.fail(new Error("Post not found")),
-      }),
-    );
-  }),
+      return yield* pipe(
+        like,
+        Option.fromNullable,
+        Option.match({
+          onNone: () => Effect.fail(new Error("Post not found")),
+        }),
+      );
+    }),
 );
 ```
 

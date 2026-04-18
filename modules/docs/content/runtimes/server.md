@@ -91,10 +91,7 @@ import { Database } from "$lib/server/database";
 import { Logger } from "$lib/server/logger";
 
 export const init = () => {
-  ServerRuntime.make(
-    Layer.provide(Database.Live),
-    Layer.provide(Logger.Live),
-  );
+  ServerRuntime.make(Layer.provide(Database.Live), Layer.provide(Logger.Live));
 };
 ```
 
@@ -118,7 +115,7 @@ export const get_session = Query(() =>
       user_id: event.cookies.get("user_id"),
       pathname: event.url.pathname,
     };
-  })
+  }),
 );
 ```
 
@@ -158,7 +155,7 @@ export const get_current_user = Query(() =>
     const session_id = event.cookies.get("session_id");
 
     return yield* users.find_by_session(session_id);
-  })
+  }),
 );
 ```
 
@@ -187,26 +184,3 @@ Effect failures are interpreted:
 
 That lets you keep remote function bodies as plain Effect programs while the
 runtime handles the transport boundary.
-
-## Choosing what belongs in the server runtime
-
-Put something in the server runtime if all of the following are true:
-
-- it is safe to run only on the server
-- remote functions need it
-- it is stable enough to be shared across executions
-
-Do not put something in the server runtime if it is:
-
-- browser-only
-- request-specific
-- secret data that should be derived later from the current request rather than
-  stored globally
-
-## Related pages
-
-- [Query](/content/remote-functions/query)
-- [Command](/content/remote-functions/command)
-- [Form](/content/remote-functions/form)
-- [Prerender](/content/remote-functions/prerender)
-- [server-runtime reference](/content/reference/server-runtime)

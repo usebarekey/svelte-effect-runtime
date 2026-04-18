@@ -26,8 +26,8 @@ export default defineConfig({
       {
         text: "Runtimes",
         items: [
-          { text: "Server", link: "/content/remote-functions/server" },
-          { text: "Client", link: "/content/remote-functions/client" },
+          { text: "Server", link: "/content/runtimes/server" },
+          { text: "Client", link: "/content/runtimes/client" },
         ],
       },
       {

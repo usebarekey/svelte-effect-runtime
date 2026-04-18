@@ -1,3 +1,7 @@
+<script setup>
+import { Lightbulb } from "lucide-vue-next";
+</script>
+
 # svelte-effect-runtime
 
 `svelte-effect-runtime` is a Vite plugin for SvelteKit allowing native
@@ -32,7 +36,7 @@ In your `vite.config.ts` file, add the following:
 ```diff
 + import { effect } from "svelte-effect-runtime";
 
-export default defineConfig({ 
+export default defineConfig({
 -   plugins: [sveltekit()],
 +   plugins: [effect(), sveltekit()],
 });
@@ -40,6 +44,30 @@ export default defineConfig({
 
 It is important that `effect()` comes first and before `sveltekit()` as it does
 heavy transformations to the codebase.
+
+### Enabling SvelteKit's remote functions
+
+<div class="ser-callout">
+  <Lightbulb class="ser-callout__icon" :size="20" />
+  <p class="ser-callout__text">
+    This step is optional unless you are planning on using Remote Functions.
+  </p>
+</div>
+
+In your `svelte.config.js`, also enable `kit.experimental.remoteFunctions`. Without this, Remote Functions will not work.
+
+```diff
+  /** @type {import("@sveltejs/kit").Config} */
+  const config = {
+   preprocess: [effect(), sveltekit()],
+    kit: {
+      adapter: adapter(),
++     experimental: {
++       remoteFunctions: true,
++     },
+    },
+  };
+```
 
 ## Client
 
@@ -62,6 +90,27 @@ On the server, `svelte-effect-runtime` gives you wrappers around
 [Command](content/remote-functions/command), and
 [Prerender](content/remote-functions/prerender) functions.
 
+## Effect version 3 and 4
+
+`svelte-effect-runtime` currently defaults to Effect v3.
+
+If you want to use Effect v4, import from the `/v4` entrypoint instead:
+
+```ts
+import { ... } from "svelte-effect-runtime/v4";
+```
+
+Effect v4 is fully supported while it remains in beta.
+
+Once Effect v4 becomes the default, `svelte-effect-runtime` will resolve to v4,
+and the current v3 entrypoint will remain available at:
+
+```ts
+import { ... } from "svelte-effect-runtime/v3";
+```
+
+You can also use the `/v3` suffix today.
+
 ## Runtime
 
 If you are familiar with Effect, you might be wondering how to fufill various
@@ -69,16 +118,15 @@ If you are familiar with Effect, you might be wondering how to fufill various
 for your application. Luckily, we give you two handy helpers for crafting both a
 client and server runtime.
 
-<script setup>
-import { Lightbulb } from "lucide-vue-next";
-</script>
-
 <div class="ser-callout">
   <Lightbulb class="ser-callout__icon" :size="20" />
   <p class="ser-callout__text">
-    Registering a runtime in `hooks.client.ts` or `hooks.server.ts` is optional.
-    A default empty-layer runtime is created lazily when nothing has been
-    registered yet.
+    Registering a runtime in
+    <code>hooks.client.ts</code>
+    or
+    <code>hooks.server.ts</code>
+    is optional. A default empty-layer runtime is created lazily when nothing
+    has been registered yet.
   </p>
 </div>
 
@@ -98,8 +146,7 @@ export const init = () => {
 
 ### Creating the server runtime
 
-For the server, create your runtime in `hooks.server.ts` when your remote
-Effects need custom services:
+For the server, create your runtime in `hooks.server.ts`:
 
 ```ts
 import { ServerRuntime } from "svelte-effect-runtime";

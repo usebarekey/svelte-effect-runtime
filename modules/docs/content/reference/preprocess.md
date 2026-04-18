@@ -1,10 +1,15 @@
 # preprocess
 
-`effectPreprocess(...)` is the low-level `.svelte` preprocessor entry used by the plugin.
+`effectPreprocess(...)` is the low-level `.svelte` preprocessor entry used by
+the plugin.
 
 ```ts
-import { effectPreprocess } from "svelte-effect-runtime";
+import { effectPreprocess } from "svelte-effect-runtime/preprocess";
 ```
+
+Most apps should use `effect()` from `"svelte-effect-runtime"` instead. Reach
+for `effectPreprocess(...)` only when you need to compose the transform
+manually.
 
 ## Signature
 
@@ -16,7 +21,7 @@ export interface EffectPreprocessOptions {
 }
 
 export function effectPreprocess(
-  options?: EffectPreprocessOptions
+  options?: EffectPreprocessOptions,
 ): PreprocessorGroup;
 ```
 

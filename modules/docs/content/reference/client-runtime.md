@@ -5,11 +5,9 @@ Client runtime APIs are used by `<script effect>` components and by the client-s
 ```ts
 import {
   ClientRuntime,
-  provideEffectRuntime,
   getEffectRuntimeOrThrow,
   runComponentEffect,
-  runInlineEffect,
-  registerHotDispose
+  runInlineEffect
 } from "svelte-effect-runtime";
 ```
 
@@ -41,11 +39,6 @@ export interface EffectRuntime<R = unknown> {
 ```
 
 ```ts
-export function provideEffectRuntime<T extends EffectRuntime>(
-  runtime: T,
-  options?: { disposeOnDestroy?: boolean }
-): T;
-
 export function getEffectRuntimeOrThrow<
   T extends EffectRuntime = EffectRuntime<never>
 >(): T;
@@ -59,11 +52,6 @@ export function runInlineEffect<A, E, R>(
   runtime: EffectRuntime<R>,
   program: Effect.Effect<A, E, R>
 ): Promise<A>;
-
-export function registerHotDispose(
-  meta: ImportMetaLike,
-  cleanup: () => void
-): void;
 ```
 
 ## Semantics
@@ -72,7 +60,8 @@ export function registerHotDispose(
 - If called from `hooks.client.ts`, the runtime is stored globally for subsequent effect components.
 - If called from a component, the runtime is also placed into Svelte context and disposed on component destroy.
 - Calling `ClientRuntime.make(...)` again replaces the active client runtime.
-- `getEffectRuntimeOrThrow()` first checks Svelte context, then the global runtime. If neither is set, a default runtime with an empty layer is created automatically — `ClientRuntime.make()` is optional and only needed when you want to provide custom services or layers.
+- `getEffectRuntimeOrThrow()`, `runComponentEffect()`, and `runInlineEffect()` are generated-code helpers used by the compiler output. They are exported for runtime integration, but are internal APIs and not intended for hand-written imports.
+- `getEffectRuntimeOrThrow()` first checks Svelte context, then the global runtime. If neither is set, a default runtime with an empty layer is created automatically. `ClientRuntime.make()` is optional and only needed when you want to provide custom services or layers.
 
 ## Default runtime
 
