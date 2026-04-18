@@ -101,7 +101,7 @@ Typical examples:
 - a client-side API abstraction
 - analytics or telemetry wrappers
 
-The usual place to register those services is `hooks.client.ts`:
+The usual place to register those services is `src/hooks.client.ts`:
 
 ```ts
 import { Layer } from "effect";

@@ -188,7 +188,7 @@ import { ClientRuntime } from "${runtimeModuleId}";
       const app = await mountComponent(module, dom.document.body);
       await flushEffects();
 
-      assertStringIncludes(dom.document.body.textContent ?? "", "1");
+      assertEquals(dom.document.body.textContent?.trim(), "1");
       await destroyComponent(app);
     } finally {
       dom.cleanup();

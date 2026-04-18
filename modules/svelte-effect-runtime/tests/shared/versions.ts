@@ -1,4 +1,5 @@
 import * as v3_client from "$/v3/client.ts";
+import { toFileUrl } from "@std/path";
 import * as v3_server from "$/v3/server.ts";
 import { effect_preprocess as v3_preprocess } from "$/v3/preprocess.ts";
 import {
@@ -51,10 +52,6 @@ export interface VersionHarness {
   };
 }
 
-function toFileUrl(path: string): string {
-  return new URL(`file:///${path.replace(/\\/g, "/")}`).href;
-}
-
 function buildVariant(
   name: string,
   runtimeImport: string,
@@ -105,8 +102,8 @@ export const v3_harness: VersionHarness = {
     ],
   },
   preprocess: v3_preprocess,
-  runtimeModuleUrl: toFileUrl(repoFile("tests/support/client-runtime.ts")),
-  serverModuleUrl: toFileUrl(repoFile("v3/server.ts")),
+  runtimeModuleUrl: toFileUrl(repoFile("tests/support/client-runtime.ts")).href,
+  serverModuleUrl: toFileUrl(repoFile("v3/server.ts")).href,
   server: v3_server,
   vite: {
     svelte_effect_runtime: v3_svelte_effect_runtime,
@@ -132,8 +129,8 @@ export const v4_harness: VersionHarness = {
     vite: ["svelte-effect-runtime/v4/vite"],
   },
   preprocess: v4_preprocess,
-  runtimeModuleUrl: toFileUrl(repoFile("tests/support/client-runtime.ts")),
-  serverModuleUrl: toFileUrl(repoFile("v4/server.ts")),
+  runtimeModuleUrl: toFileUrl(repoFile("tests/support/client-runtime.ts")).href,
+  serverModuleUrl: toFileUrl(repoFile("v4/server.ts")).href,
   server: v4_server,
   vite: {
     svelte_effect_runtime: v4_svelte_effect_runtime,

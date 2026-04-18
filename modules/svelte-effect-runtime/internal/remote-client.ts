@@ -77,10 +77,46 @@ interface Attached_form_tracker {
   current: HTMLFormElement | null;
 }
 
+function is_development_environment(): boolean {
+  const vite_environment = (
+    import.meta as ImportMeta & {
+      env?: {
+        DEV?: boolean;
+      };
+    }
+  ).env;
+
+  if (typeof vite_environment?.DEV === "boolean") {
+    return vite_environment.DEV;
+  }
+
+  const node_process = (globalThis as typeof globalThis & {
+    process?: {
+      env?: {
+        DEV?: string;
+        NODE_ENV?: string;
+        SVELTE_EFFECT_RUNTIME_DEBUG?: string;
+      };
+    };
+  }).process;
+
+  return (
+    node_process?.env?.SVELTE_EFFECT_RUNTIME_DEBUG === "1" ||
+    node_process?.env?.DEV === "1" ||
+    node_process?.env?.NODE_ENV === "development"
+  );
+}
+
+const ENABLE_REMOTE_CLIENT_DEBUG_LOGS = is_development_environment();
+
 function log_remote_client_step(
   step: string,
   details?: Record<string, unknown>,
 ): void {
+  if (!ENABLE_REMOTE_CLIENT_DEBUG_LOGS) {
+    return;
+  }
+
   console.log("[svelte-effect-runtime][remote-client]", step, details ?? {});
 }
 

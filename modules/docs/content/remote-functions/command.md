@@ -38,22 +38,22 @@ import { Lightbulb } from "lucide-vue-next";
 ::: code-group
 
 ```ts [src/routes/blog/data.remote.ts]
-import { Effect, Schema } from "effect";
+import { Effect, Option, pipe, Schema } from "effect";
 import { Command } from "svelte-effect-runtime";
 import { Database } from "$lib/server/database";
 
 export const like_post = Command(
   Schema.Struct({
-    slug: Effect.String,
+    slug: Schema.String,
   }),
-  () =>
+  ({ slug }) =>
     Effect.gen(function* () {
       const db = yield* Database;
 
-      const [like] = yield* Database.sql`
+      const [like] = yield* db.sql`
       update item
       set likes = likes + 1
-      where id = ${id}
+      where slug = ${slug}
       returning
     `;
 
@@ -71,26 +71,26 @@ export const like_post = Command(
 ```svelte [src/routes/blog/+page.svelte]
 <script lang="ts" effect>
   import { Effect } from "effect";
-  import { like_post } from "./data.remote";
+  import { get_posts, like_post } from "./data.remote";
   import { toast } from "svelte-sonner";
 
-  const like = Effect.gen(function* () {
-    yield* pipe(
-      yield* like_post,
-      Effect.match({
-        onFailure: (err) => toast.error(err);
-      })
-    )
-  });
+  const like = (slug: string) =>
+    like_post({ slug }).pipe(
+      Effect.tapError((err) =>
+        Effect.sync(() => {
+          toast.error(String(err));
+        })
+      ),
+    );
 </script>
 
 <h1>Recent posts</h1>
 
 <ul>
-  {#each await get_posts() as { title, slug }}
+  {#each yield* get_posts() as { title, slug }}
     <li>
       <a href="/blog/{slug}">{title}</a>
-      <button onclick={yield* like({ slug })}>
+      <button onclick={yield* like(slug)}>
         Like
       </button>
     </li>

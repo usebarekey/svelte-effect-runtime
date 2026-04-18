@@ -10,8 +10,8 @@ from `"svelte-effect-runtime"` and compose it with `sveltekit()`.
 
 ```ts
 import {
-  svelteEffectRuntime,
-  sveltekitEffectRuntime,
+  svelte_effect_runtime,
+  sveltekit_effect_runtime,
 } from "svelte-effect-runtime/vite";
 ```
 
@@ -25,11 +25,11 @@ export interface SveltekitEffectRuntimeOptions {
   remoteModuleId?: string;
 }
 
-export function svelteEffectRuntime(
+export function svelte_effect_runtime(
   options?: SvelteEffectRuntimeOptions,
 ): Plugin[];
 
-export function sveltekitEffectRuntime(
+export function sveltekit_effect_runtime(
   options?: SveltekitEffectRuntimeOptions,
 ): Plugin;
 ```
@@ -37,6 +37,6 @@ export function sveltekitEffectRuntime(
 ## Notes
 
 - `effect()` is a companion plugin and should be composed with `sveltekit()`.
-- `effectPreprocess(...)` lives at `"svelte-effect-runtime/preprocess"`.
+- `effect_preprocess(...)` lives at `"svelte-effect-runtime/preprocess"`.
 - the custom language server and VSIX smooth over `yield*` syntax in editors
 - the Vite/SvelteKit build path is the source of truth

@@ -54,12 +54,12 @@ heavy transformations to the codebase.
   </p>
 </div>
 
-In your `svelte.config.js`, also enable `kit.experimental.remoteFunctions`. Without this, Remote Functions will not work.
+In your `svelte.config.js`, also enable `kit.experimental.remoteFunctions`.
+Without this, Remote Functions will not work.
 
 ```diff
   /** @type {import("@sveltejs/kit").Config} */
   const config = {
-   preprocess: [effect(), sveltekit()],
     kit: {
       adapter: adapter(),
 +     experimental: {
@@ -122,9 +122,9 @@ client and server runtime.
   <Lightbulb class="ser-callout__icon" :size="20" />
   <p class="ser-callout__text">
     Registering a runtime in
-    <code>hooks.client.ts</code>
+    <code>src/hooks.client.ts</code>
     or
-    <code>hooks.server.ts</code>
+    <code>src/hooks.server.ts</code>
     is optional. A default empty-layer runtime is created lazily when nothing
     has been registered yet.
   </p>
@@ -132,7 +132,7 @@ client and server runtime.
 
 ### Creating the client Runtime
 
-For the client, create your runtime in your `hooks.client.ts`:
+For the client, create your runtime in `src/hooks.client.ts`:
 
 ```ts
 import { ClientRuntime } from "svelte-effect-runtime";
@@ -146,7 +146,7 @@ export const init = () => {
 
 ### Creating the server runtime
 
-For the server, create your runtime in `hooks.server.ts`:
+For the server, create your runtime in `src/hooks.server.ts`:
 
 ```ts
 import { ServerRuntime } from "svelte-effect-runtime";
