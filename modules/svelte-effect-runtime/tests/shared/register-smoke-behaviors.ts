@@ -1,4 +1,5 @@
 import type { BuildVariant, VersionHarness } from "$tests/shared/versions.ts";
+import { join } from "@std/path";
 import {
   makeTempWorkspace,
   repoFile,
@@ -32,7 +33,7 @@ async function pack_runtime_package(): Promise<string> {
     throw new Error("npm pack did not return a tarball filename.");
   }
 
-  return `${temp_dir}\\${tarball}`;
+  return join(temp_dir, tarball);
 }
 
 async function install_smoke_dependencies(
