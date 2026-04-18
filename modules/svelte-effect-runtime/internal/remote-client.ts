@@ -1,4 +1,4 @@
-import * as Effect from "effect/Effect";
+import { Effect } from "effect";
 import { tick } from "svelte";
 import { create_remote_effect_from_promise } from "$/client.ts";
 import { create_async_effect } from "$internal/effect-compat.ts";

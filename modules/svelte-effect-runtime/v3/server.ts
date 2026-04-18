@@ -15,13 +15,8 @@ import {
 } from "$app/server";
 import { get_request_store } from "@sveltejs/kit/internal/server";
 import * as devalue from "devalue";
-import * as Cause from "effect/Cause";
-import type * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import * as Layer from "effect/Layer";
-import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Schema from "effect/Schema";
+import { Cause, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect";
+import type { Context } from "effect";
 import {
   create_form_error,
   create_serialized_remote_failure_envelope,

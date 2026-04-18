@@ -1,8 +1,4 @@
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Cause from "effect/Cause";
-import * as Exit from "effect/Exit";
+import { Cause, Effect, Exit, Layer, ManagedRuntime } from "effect";
 import { getContext, hasContext, onDestroy, setContext } from "svelte";
 import {
   create_remote_domain_error,
@@ -50,7 +46,7 @@ export interface ClientRuntimeService extends EffectRuntime<unknown> {}
 
 type RuntimeSeedLayer<R> = Layer.Layer<R, never, R>;
 
-function runtimeSeed<R>(): RuntimeSeedLayer<R> {
+function runtime_seed<R>(): RuntimeSeedLayer<R> {
   return Layer.effectContext(Effect.context<R>());
 }
 
@@ -106,11 +102,11 @@ type ManagedRuntimeFromOps<Ops extends ReadonlyArray<RuntimeOperator>> =
     Layer.Layer.Error<FinalRuntimeLayer<Ops>>
   >;
 
-function pipeClientRuntime(): Layer.Layer<never>;
-function pipeClientRuntime<
+function pipe_client_runtime(): Layer.Layer<never>;
+function pipe_client_runtime<
   const Ops extends readonly [RuntimeOperator, ...Array<RuntimeOperator>],
 >(...ops: Ops): FinalRuntimeLayer<Ops>;
-function pipeClientRuntime(
+function pipe_client_runtime(
   ...ops: Array<RuntimeOperator>
 ): Layer.Layer<never, unknown, unknown> {
   if (ops.length === 0) {
@@ -119,18 +115,18 @@ function pipeClientRuntime(
 
   return ops.reduce<Layer.Layer<unknown, unknown, unknown>>(
     (layer, op) => op(layer),
-    runtimeSeed<unknown>(),
+    runtime_seed<unknown>(),
   ) as Layer.Layer<never, unknown, unknown>;
 }
 
-function makeClientRuntime(): ManagedRuntime.ManagedRuntime<never, never>;
-function makeClientRuntime<
+function make_client_runtime(): ManagedRuntime.ManagedRuntime<never, never>;
+function make_client_runtime<
   const Ops extends readonly [RuntimeOperator, ...Array<RuntimeOperator>],
 >(...ops: Ops): ManagedRuntimeFromOps<Ops>;
-function makeClientRuntime(
+function make_client_runtime(
   ...ops: [] | [RuntimeOperator, ...Array<RuntimeOperator>]
 ): ManagedRuntime.ManagedRuntime<never, unknown> {
-  const layer = ops.length === 0 ? pipeClientRuntime() : pipeClientRuntime(
+  const layer = ops.length === 0 ? pipe_client_runtime() : pipe_client_runtime(
     ...(ops as [RuntimeOperator, ...Array<RuntimeOperator>]),
   );
 
@@ -142,7 +138,7 @@ function makeClientRuntime(
   current_client_runtime = runtime;
 
   if (is_component_context_available()) {
-    return provideEffectRuntime(runtime, { disposeOnDestroy: true });
+    return provide_effect_runtime(runtime, { disposeOnDestroy: true });
   }
 
   return runtime;
@@ -155,8 +151,8 @@ function makeClientRuntime(
  * @see https://ser.barekey.dev/content/reference/client-runtime
  */
 export const ClientRuntime: ClientRuntimeSeed = {
-  pipe: pipeClientRuntime,
-  make: makeClientRuntime,
+  pipe: pipe_client_runtime,
+  make: make_client_runtime,
 };
 
 /**
@@ -165,7 +161,7 @@ export const ClientRuntime: ClientRuntimeSeed = {
  *
  * @internal Internal - do not use.
  */
-function provideEffectRuntime<T extends EffectRuntime>(
+function provide_effect_runtime<T extends EffectRuntime>(
   runtime: T,
   options: ProvideEffectRuntimeOptions = {},
 ): T {
@@ -262,15 +258,7 @@ export function run_inline_effect<A, E, R>(
   runtime: EffectRuntime<R>,
   program: Effect.Effect<A, E, R>,
 ): Promise<A> {
-  console.log("[svelte-effect-runtime][client]", "run_inline_effect:start");
   return runtime.runPromise(program).catch((error) => {
-    console.error(
-      "[svelte-effect-runtime][client]",
-      "run_inline_effect:error",
-      {
-        error,
-      },
-    );
     queueMicrotask(() => {
       throw error;
     });

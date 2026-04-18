@@ -1,10 +1,4 @@
-import * as Cause from "effect/Cause";
-import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-import * as Schema_ast from "effect/SchemaAST";
+import { Cause, Context, Effect, Exit, Option, Schema, SchemaAST } from "effect";
 
 export interface EffectContextKey<Identifier, Service> {
   readonly Identifier: Identifier;
@@ -169,7 +163,7 @@ export function get_effect_schema_field_names(
   }
 
   const get_property_signatures = Reflect.get(
-    Schema_ast as object,
+    SchemaAST as object,
     "getPropertySignatures",
   ) as
     | ((ast: unknown) => ReadonlyArray<{ readonly name: unknown }>)
@@ -182,7 +176,7 @@ export function get_effect_schema_field_names(
   }
 
   const is_objects_ast = Reflect.get(
-    Schema_ast as object,
+    SchemaAST as object,
     "isObjects",
   ) as ((ast: unknown) => boolean) | undefined;
 
