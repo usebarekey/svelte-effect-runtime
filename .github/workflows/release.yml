@@ -254,11 +254,30 @@ jobs:
             exit 1
           fi
 
-          tfx extension publish \
-            --publisher barekey \
-            --vsix "$VSIX_PATH" \
-            --auth-type pat \
-            --token "$ENTRA_TOKEN"
+          set +e
+          TFX_OUTPUT="$(
+            tfx extension publish \
+              --publisher barekey \
+              --vsix "$VSIX_PATH" \
+              --auth-type pat \
+              --token "$ENTRA_TOKEN" \
+              2>&1
+          )"
+          TFX_EXIT_CODE=$?
+          set -e
+
+          printf '%s\n' "$TFX_OUTPUT"
+
+          if [ "$TFX_EXIT_CODE" -eq 0 ]; then
+            exit 0
+          fi
+
+          if printf '%s' "$TFX_OUTPUT" | grep -Fq "already exists and cannot be modified"; then
+            echo "Visual Studio Marketplace already has version $RELEASE_VERSION. Skipping republish."
+            exit 0
+          fi
+
+          exit "$TFX_EXIT_CODE"
 
       - name: create_or_update_release
         env:
