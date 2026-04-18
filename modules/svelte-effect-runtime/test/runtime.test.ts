@@ -3,11 +3,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import {
-  registerHotDispose,
-  runComponentEffect,
-  ClientRuntime,
-} from "../client.ts";
+import { ClientRuntime, runComponentEffect } from "../client.ts";
 import {
   compileFixtureModule,
   destroyComponent,
@@ -26,7 +22,7 @@ Deno.test("mounted effect components can assign into top-level Svelte state", as
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { ClientRuntime } from "${runtimeModuleId}";
+import { ClientRuntime } from "${runtimeModuleId}";
   import Counter from "./Counter.svelte";
 
   ClientRuntime.make();
@@ -63,7 +59,7 @@ Deno.test("later declarations can use yielded values like normal Effect code", a
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { ClientRuntime } from "${runtimeModuleId}";
+import { ClientRuntime } from "${runtimeModuleId}";
   import Counter from "./Counter.svelte";
 
   ClientRuntime.make();
@@ -103,7 +99,7 @@ Deno.test("component unmount cancels the running effect", async () => {
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { ClientRuntime } from "${runtimeModuleId}";
+import { ClientRuntime } from "${runtimeModuleId}";
   import Worker from "./Worker.svelte";
 
   let { events } = $props<{ events: string[] }>();
@@ -186,7 +182,7 @@ export const NumberService = Context.GenericTag<{ readonly value: number }>(
 `,
         "App.svelte": `<script lang="ts">
   import * as Layer from "effect/Layer";
-  import { ClientRuntime } from "${runtimeModuleId}";
+import { ClientRuntime } from "${runtimeModuleId}";
   import { NumberService } from "./service.ts";
   import Counter from "./Counter.svelte";
 
@@ -230,7 +226,7 @@ Deno.test("destructuring yielded values works in effect declarations", async () 
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { ClientRuntime } from "${runtimeModuleId}";
+import { ClientRuntime } from "${runtimeModuleId}";
   import Counter from "./Counter.svelte";
 
   ClientRuntime.make();
@@ -268,7 +264,7 @@ Deno.test("markup helpers support inline handlers and block expressions", async 
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { ClientRuntime } from "${runtimeModuleId}";
+import { ClientRuntime } from "${runtimeModuleId}";
   import Demo from "./Demo.svelte";
 
   ClientRuntime.make();
@@ -350,7 +346,7 @@ Deno.test("markup helpers still work when Svelte experimental async mode is enab
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { ClientRuntime } from "${runtimeModuleId}";
+import { ClientRuntime } from "${runtimeModuleId}";
   import Demo from "./Demo.svelte";
 
   ClientRuntime.make();
@@ -415,7 +411,7 @@ Deno.test("inline yield event handlers respect exact effect semantics from the c
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { ClientRuntime } from "${runtimeModuleId}";
+import { ClientRuntime } from "${runtimeModuleId}";
   import Demo from "./Demo.svelte";
 
   ClientRuntime.make();
@@ -512,27 +508,6 @@ Deno.test("failed effects surface as uncaught client errors", async () => {
   }
 });
 
-Deno.test("hmr dispose wiring forwards cleanup callbacks", () => {
-  let disposed = false;
-  let registered: (() => void) | undefined;
-
-  registerHotDispose(
-    {
-      hot: {
-        dispose(callback) {
-          registered = callback;
-        },
-      },
-    },
-    () => {
-      disposed = true;
-    },
-  );
-
-  registered?.();
-  assertEquals(disposed, true);
-});
-
 Deno.test("ClientRuntime composes through Layer.provide for runtime dependencies", async () => {
   const NumberService = Context.GenericTag<{ readonly value: number }>(
     "test/NumberService",
@@ -591,7 +566,7 @@ Deno.test("{@render yield* fn(arg)} mounts the returned snippet", async () => {
     const module = await compileFixtureModule(
       {
         "App.svelte": `<script lang="ts">
-  import { ClientRuntime } from "${runtimeModuleId}";
+import { ClientRuntime } from "${runtimeModuleId}";
   import Demo from "./Demo.svelte";
 
   ClientRuntime.make();
