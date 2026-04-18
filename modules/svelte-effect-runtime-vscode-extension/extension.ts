@@ -7,7 +7,7 @@ const STATE_PREVIOUS_PATH = "svelteEffectRuntime.previousLsPath";
 const STATE_MANAGED_PATH = "svelteEffectRuntime.managedLsPath";
 
 export async function activate(context: vscode.ExtensionContext) {
-  const server_path = context.asAbsolutePath("dist/server.cjs");
+  const server_path = context.asAbsolutePath("dist/server.js");
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
@@ -46,10 +46,11 @@ async function configure_language_server(
 ) {
   const svelte_config = vscode.workspace.getConfiguration("svelte");
   const current_path = svelte_config.get<string | undefined>(TARGET_KEY);
-  const managed_path = context.globalState.get<string | undefined>(STATE_MANAGED_PATH);
+  const managed_path = context.globalState.get<string | undefined>(
+    STATE_MANAGED_PATH,
+  );
 
-  const can_auto_configure =
-    !current_path ||
+  const can_auto_configure = !current_path ||
     current_path === managed_path ||
     current_path === server_path;
 
@@ -75,7 +76,9 @@ async function configure_language_server(
 
 async function disable_language_server(context: vscode.ExtensionContext) {
   const svelte_config = vscode.workspace.getConfiguration("svelte");
-  const previous_path = context.globalState.get<string | undefined>(STATE_PREVIOUS_PATH);
+  const previous_path = context.globalState.get<string | undefined>(
+    STATE_PREVIOUS_PATH,
+  );
 
   await svelte_config.update(
     TARGET_KEY,

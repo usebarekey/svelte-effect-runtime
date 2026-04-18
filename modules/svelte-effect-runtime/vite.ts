@@ -5,7 +5,7 @@ import {
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Plugin } from "vite";
 import {
   effectPreprocess,
@@ -60,12 +60,14 @@ function resolve_runtime_internal_path(
     ? source_relative_path
     : dist_relative_path;
 
-  return new URL(relative_path, import.meta.url).pathname;
+  return fileURLToPath(new URL(relative_path, import.meta.url));
 }
 
 function resolve_kit_internal_runtime_path(relative_path: string): string {
   const runtime_require = createRequire(resolve(process.cwd(), "package.json"));
-  const kit_package_path = runtime_require.resolve("@sveltejs/kit/package.json");
+  const kit_package_path = runtime_require.resolve(
+    "@sveltejs/kit/package.json",
+  );
   const kit_root = dirname(kit_package_path);
 
   return pathToFileURL(resolve(kit_root, relative_path)).href;
@@ -104,18 +106,30 @@ function create_remote_runtime_module_code(): string {
   return `
 import * as devalue from "devalue";
 import { base, app_dir } from "$app/paths/internal/client";
-import { query as native_query, query_batch as native_query_batch } from ${JSON.stringify(kit_query_module_path)};
-import { command as native_command } from ${JSON.stringify(kit_command_module_path)};
+import { query as native_query, query_batch as native_query_batch } from ${
+    JSON.stringify(kit_query_module_path)
+  };
+import { command as native_command } from ${
+    JSON.stringify(kit_command_module_path)
+  };
 import { form as native_form } from ${JSON.stringify(kit_form_module_path)};
-import { prerender as native_prerender } from ${JSON.stringify(kit_prerender_module_path)};
+import { prerender as native_prerender } from ${
+    JSON.stringify(kit_prerender_module_path)
+  };
 import {
   apply_refreshes,
   get_remote_request_headers,
   remote_request
 } from ${JSON.stringify(kit_shared_module_path)};
-import { app, invalidateAll, _goto } from ${JSON.stringify(kit_client_module_path)};
-import { BINARY_FORM_CONTENT_TYPE, serialize_binary_form } from ${JSON.stringify(kit_form_utils_module_path)};
-import { stringify_remote_arg } from ${JSON.stringify(kit_shared_runtime_module_path)};
+import { app, invalidateAll, _goto } from ${
+    JSON.stringify(kit_client_module_path)
+  };
+import { BINARY_FORM_CONTENT_TYPE, serialize_binary_form } from ${
+    JSON.stringify(kit_form_utils_module_path)
+  };
+import { stringify_remote_arg } from ${
+    JSON.stringify(kit_shared_runtime_module_path)
+  };
 import {
   create_remote_command_adapter,
   create_remote_form_adapter,
@@ -150,7 +164,8 @@ export const form = create_remote_form_adapter(native_form, decode_payload, {
 export function sveltekitEffectRuntime(
   options: SveltekitEffectRuntimeOptions = {},
 ): Plugin {
-  const remote_module_id = options.remoteModuleId ?? "\0svelte-effect-runtime:remote";
+  const remote_module_id = options.remoteModuleId ??
+    "\0svelte-effect-runtime:remote";
 
   return {
     name: "svelte-effect-runtime-remote",

@@ -1,28 +1,37 @@
+import { copy } from "@std/fs/copy";
 import { build } from "rolldown";
 import { dirname, fromFileUrl, join, resolve } from "@std/path";
 
-const package_dir = new URL(
-  "../modules/svelte-effect-runtime-vscode-extension/",
-  import.meta.url,
+const package_dir = fromFileUrl(
+  new URL(
+    "../modules/svelte-effect-runtime-vscode-extension/",
+    import.meta.url,
+  ),
 );
 const repo_root = resolve(dirname(fromFileUrl(import.meta.url)), "..");
-const output_dir = join(repo_root, "dist", "svelte-effect-runtime-vscode-extension");
-const package_dist = new URL("./dist", package_dir).pathname;
+const output_dir = join(
+  repo_root,
+  "dist",
+  "svelte-effect-runtime-vscode-extension",
+);
+const package_dist = join(package_dir, "dist");
+const package_runtime_dir = join(package_dir, "runtime");
+const output_runtime_dir = join(output_dir, "runtime");
 
+await Deno.remove(output_dir, { recursive: true }).catch(() => undefined);
 await Deno.mkdir(output_dir, { recursive: true });
 await Deno.remove(package_dist, { recursive: true }).catch(() => undefined);
-await Deno.symlink(output_dir, package_dist, { type: "dir" });
 
 await build({
   input: {
-    extension: new URL("./extension.ts", package_dir).pathname,
-    server: new URL("./server.ts", package_dir).pathname,
+    extension: join(package_dir, "extension.ts"),
+    server: join(package_dir, "server.ts"),
   },
   output: {
     dir: output_dir,
-    format: "cjs",
-    entryFileNames: "[name].cjs",
-    chunkFileNames: "chunks/[name]-[hash].cjs",
+    format: "esm",
+    entryFileNames: "[name].js",
+    chunkFileNames: "chunks/[name]-[hash].js",
     sourcemap: true,
   },
   external: [
@@ -33,3 +42,6 @@ await build({
     /^svelte-language-server$/,
   ],
 });
+
+await copy(package_runtime_dir, output_runtime_dir, { overwrite: true });
+await copy(output_dir, package_dist, { overwrite: true });

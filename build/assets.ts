@@ -27,14 +27,17 @@ try {
 }
 
 await Deno.mkdir(target_dist_dir, { recursive: true });
-await Deno.remove(package_runtime_dir, { recursive: true }).catch(() => undefined);
-await Deno.symlink(runtime_dir, package_runtime_dir, { type: "dir" });
+await Deno.remove(package_runtime_dir, { recursive: true }).catch(() =>
+  undefined
+);
 
 await Deno.remove(runtime_dir, { recursive: true }).catch(() => undefined);
 await Deno.mkdir(join(runtime_dir, "internal"), { recursive: true });
 await Deno.mkdir(join(runtime_dir, "chunks"), { recursive: true });
 
-const runtime_manifest = JSON.parse(await Deno.readTextFile(runtime_manifest_path));
+const runtime_manifest = JSON.parse(
+  await Deno.readTextFile(runtime_manifest_path),
+);
 const runtime_package_json = {
   type: "module",
   dependencies: {
@@ -48,7 +51,10 @@ await Deno.writeTextFile(
   `${JSON.stringify(runtime_package_json, null, 2)}\n`,
 );
 
-await Deno.copyFile(join(runtime_dist, "preprocess.js"), join(runtime_dir, "preprocess.js"));
+await Deno.copyFile(
+  join(runtime_dist, "preprocess.js"),
+  join(runtime_dir, "preprocess.js"),
+);
 await copy(join(runtime_dist, "internal"), join(runtime_dir, "internal"), {
   overwrite: true,
 });
@@ -62,3 +68,5 @@ try {
     throw error;
   }
 }
+
+await copy(runtime_dir, package_runtime_dir, { overwrite: true });

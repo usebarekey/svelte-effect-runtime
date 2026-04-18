@@ -1,8 +1,7 @@
 **/.git/**
 **/.DS_Store
 scripts/**
-extension.cjs
-server.cjs
-patch-language-server.cjs
+extension.js
+server.js
+patch-language-server.js
 !dist/**
-!runtime/**
