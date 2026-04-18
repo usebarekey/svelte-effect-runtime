@@ -115,6 +115,6 @@ Deno.test("injects the runtime preprocessor into the Svelte compiler path", asyn
 
   const transpiled = await new SvelteDocument(document).getTranspiled();
 
-  assert_match(transpiled.getText(), /runComponentEffect/);
+  assert_match(transpiled.getText(), /run_component_effect/);
   assert_not_match(transpiled.getText(), /<script[^>]*effect/);
 });

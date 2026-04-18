@@ -30,6 +30,12 @@ await build({
   input: {
     mod: join(package_dir, "mod.ts"),
     "root-node": join(package_dir, "root-node.ts"),
+    "v4/mod": join(package_dir, "v4", "mod.ts"),
+    "v4/root-node": join(package_dir, "v4", "root-node.ts"),
+    "v4/effect": join(package_dir, "v4", "effect.ts"),
+    "v4/preprocess": join(package_dir, "v4", "preprocess.ts"),
+    "v4/server": join(package_dir, "v4", "server.ts"),
+    "v4/vite": join(package_dir, "v4", "vite.ts"),
     effect: join(package_dir, "effect.ts"),
     client: join(package_dir, "client.ts"),
     server: join(package_dir, "server.ts"),
@@ -48,6 +54,30 @@ await build({
     chunkFileNames: "chunks/[name]-[hash].js",
     sourcemap: true,
   },
+  plugins: [
+    {
+      name: "runtime-root-aliases",
+      resolveId(source) {
+        if (source === "$") {
+          return join(package_dir, "mod.ts");
+        }
+
+        if (source.startsWith("$/")) {
+          return join(package_dir, source.slice(2));
+        }
+
+        if (source.startsWith("$internal/")) {
+          return join(package_dir, "internal", source.slice("$internal/".length));
+        }
+
+        if (source.startsWith("$tests/")) {
+          return join(package_dir, "tests", source.slice("$tests/".length));
+        }
+
+        return null;
+      },
+    },
+  ],
   external,
 });
 

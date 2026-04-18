@@ -74,7 +74,7 @@ export async function bootstrap_language_server() {
     import_runtime_module("internal/transform.js"),
   ]);
 
-  patch_svelte_compiler_path(preprocessModule.effectPreprocess);
+  patch_svelte_compiler_path(preprocessModule.effect_preprocess);
   patch_typescript_snapshot_path({
     transformEffectMarkup: markupModule.transformEffectMarkup,
     transformEffectScript: transformModule.transformEffectScript,
