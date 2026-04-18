@@ -218,11 +218,20 @@ jobs:
         run: npm install -g tfx-cli
 
       - name: publish_extension_to_openvsx
-        if: ${{ secrets.OPEN_VSX_TOKEN != '' }}
-        uses: HaaLeo/publish-vscode-extension@v2
-        with:
-          pat: ${{ secrets.OPEN_VSX_TOKEN }}
-          extensionFile: ${{ github.workspace }}/dist/svelte-effect-runtime-vscode-extension/svelte-effect-runtime-vscode-${{ env.RELEASE_VERSION }}.vsix
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.OPEN_VSX_TOKEN }}" ]; then
+            echo "OPEN_VSX_TOKEN is not configured. Skipping OpenVSX publish."
+            exit 0
+          fi
+
+          VSIX_PATH="${{ github.workspace }}/dist/svelte-effect-runtime-vscode-extension/svelte-effect-runtime-vscode-${RELEASE_VERSION}.vsix"
+          if [ ! -f "$VSIX_PATH" ]; then
+            echo "Expected VSIX package not found at $VSIX_PATH" >&2
+            exit 1
+          fi
+
+          npx ovsx publish "$VSIX_PATH" -p "${{ secrets.OPEN_VSX_TOKEN }}"
 
       - name: publish_extension_to_marketplace
         shell: bash
