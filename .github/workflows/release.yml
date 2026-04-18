@@ -172,6 +172,17 @@ jobs:
         working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
         run: deno task build
 
+      - name: prepare_runtime_for_jsr
+        if: ${{ vars.JSR_PACKAGE_NAME != '' }}
+        env:
+          JSR_PACKAGE_NAME: ${{ vars.JSR_PACKAGE_NAME }}
+        run: deno run -A ./build/jsr.ts
+
+      - name: publish_runtime_to_jsr
+        if: ${{ vars.JSR_PACKAGE_NAME != '' }}
+        working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime
+        run: npx jsr publish
+
       - name: build_lsp
         working-directory: ${{ github.workspace }}/modules/svelte-effect-runtime-language-server
         run: deno task build
@@ -205,6 +216,13 @@ jobs:
 
       - name: install_tfx_cli
         run: npm install -g tfx-cli
+
+      - name: publish_extension_to_openvsx
+        if: ${{ secrets.OPEN_VSX_TOKEN != '' }}
+        uses: HaaLeo/publish-vscode-extension@v2
+        with:
+          pat: ${{ secrets.OPEN_VSX_TOKEN }}
+          extensionFile: ${{ github.workspace }}/dist/svelte-effect-runtime-vscode-extension/svelte-effect-runtime-vscode-${{ env.RELEASE_VERSION }}.vsix
 
       - name: publish_extension_to_marketplace
         shell: bash
