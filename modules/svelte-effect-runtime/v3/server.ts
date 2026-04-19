@@ -666,15 +666,6 @@ function create_native_wrapper(value: object) {
       return property === "native" || Reflect.has(target, property);
     },
     getOwnPropertyDescriptor(target, property) {
-      if (property === "native") {
-        return {
-          configurable: true,
-          enumerable: false,
-          value,
-          writable: false,
-        };
-      }
-
       return Reflect.getOwnPropertyDescriptor(target, property);
     },
   });
