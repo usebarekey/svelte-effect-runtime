@@ -44,7 +44,47 @@ export type RemoteForm<Input extends RemoteFormInput | void, Output> =
 
 type OptionalArgument<Input> = undefined extends Input ? Input | void : Input;
 
-type RuntimeOperator = (self: unknown) => unknown;
+type RuntimeOperator = (
+  self: Layer_type.Layer<unknown, unknown, unknown>,
+) => Layer_type.Layer<unknown, unknown, unknown>;
+
+type RuntimeSeedLayer<Requirements> = Layer_type.Layer<
+  Requirements,
+  never,
+  Requirements
+>;
+
+type ProvidedBy<Op> = Op extends (
+  self: RuntimeSeedLayer<infer Requirements>,
+) => Layer_type.Layer<unknown, unknown, infer Incoming>
+  ? Exclude<Requirements, Incoming>
+  : never;
+
+type ProvidedByAll<Ops extends ReadonlyArray<RuntimeOperator>> = Ops extends
+  readonly [infer Head, ...infer Tail] ?
+    | ProvidedBy<Head>
+    | ProvidedByAll<Extract<Tail, ReadonlyArray<RuntimeOperator>>>
+  : never;
+
+type ApplyOperator<Seed, Op> = Op extends (self: Seed) => infer Out ? Out
+  : never;
+
+type ApplyOperators<
+  Seed,
+  Ops extends ReadonlyArray<RuntimeOperator>,
+> = Ops extends readonly [infer Head, ...infer Tail] ? ApplyOperators<
+    ApplyOperator<Seed, Head>,
+    Extract<Tail, ReadonlyArray<RuntimeOperator>>
+  >
+  : Seed;
+
+type FinalRuntimeLayer<Ops extends ReadonlyArray<RuntimeOperator>> =
+  ApplyOperators<RuntimeSeedLayer<ProvidedByAll<Ops>>, Ops> extends infer Out
+    ? Out extends Layer_type.Layer<unknown, unknown, infer Incoming>
+      ? [Incoming] extends [never] ? Out
+      : never
+    : never
+    : never;
 
 type SchemaInput<SchemaType extends EffectSchemaLike> = SchemaType extends
   { readonly Encoded: infer Input } ? Input
@@ -135,7 +175,7 @@ export interface ServerRuntimeSeed {
   pipe(): Layer_type.Layer<never>;
   pipe<const Ops extends readonly [RuntimeOperator, ...Array<RuntimeOperator>]>(
     ...ops: Ops
-  ): unknown;
+  ): FinalRuntimeLayer<Ops>;
   make(): void;
   make<const Ops extends readonly [RuntimeOperator, ...Array<RuntimeOperator>]>(
     ...ops: Ops
