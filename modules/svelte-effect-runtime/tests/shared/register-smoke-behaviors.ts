@@ -256,6 +256,101 @@ export default defineConfig({
   };
 }
 
+function create_kit_form_descriptor_fixture(
+  variant: BuildVariant,
+): Record<string, string> {
+  return {
+    "package.json": JSON.stringify(
+      {
+        name: `ser-kit-form-descriptor-${variant.name}`,
+        private: true,
+        type: "module",
+      },
+      null,
+      2,
+    ),
+    "src/app.html": `<!doctype html>
+<html lang="en">
+  <head>%sveltekit.head%</head>
+  <body>
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>
+`,
+    "src/routes/+layout.ts": `export const prerender = true;`,
+    "src/routes/+page.server.ts": `import { oauth_remote } from "./oauth.remote";
+
+export function load() {
+  const descriptor = Object.getOwnPropertyDescriptor(oauth_remote, "native");
+
+  return {
+    configurable: descriptor?.configurable ?? null,
+    enumerable: descriptor?.enumerable ?? null,
+    writable: "writable" in (descriptor ?? {})
+      ? (descriptor as PropertyDescriptor).writable ?? null
+      : null,
+  };
+}
+`,
+    "src/routes/+page.svelte": `<script lang="ts">
+  let { data } = $props<{
+    data: {
+      configurable: boolean | null;
+      enumerable: boolean | null;
+      writable: boolean | null;
+    };
+  }>();
+</script>
+
+<h1>form descriptor smoke</h1>
+<p>{String(data.configurable)} / {String(data.enumerable)} / {String(data.writable)}</p>
+`,
+    "src/routes/oauth.remote.ts": `import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import { Form } from "${variant.runtimeImport}";
+
+const OAuthInput = Schema.Struct({
+  provider: Schema.String,
+});
+
+export const oauth_remote = Form(OAuthInput, ({ data }) =>
+  Effect.succeed({
+    provider: data.provider,
+    redirectTo: "/auth/" + data.provider,
+  })
+);
+`,
+    "svelte.config.js": `import adapter from "@sveltejs/adapter-static";
+import { effect_preprocess } from "${variant.preprocessImport}";
+
+/** @type {import("@sveltejs/kit").Config} */
+const config = {
+  preprocess: [
+    effect_preprocess({
+      runtimeModuleId: ${JSON.stringify(variant.runtimeImport)},
+    }),
+  ],
+  kit: {
+    adapter: adapter(),
+    experimental: {
+      remoteFunctions: true,
+    },
+  },
+};
+
+export default config;
+`,
+    "vite.config.mjs": `import { sveltekit } from "@sveltejs/kit/vite";
+import { sveltekit_effect_runtime } from "${variant.viteImport}";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [sveltekit_effect_runtime(), sveltekit()],
+});
+`,
+  };
+}
+
 async function build_fixture(
   fixture_root: string,
   config_file: string,
@@ -298,6 +393,24 @@ export function register_smoke_behaviors(harness: VersionHarness): void {
           await writeFixtureTree(
             fixture_root,
             create_kit_fixture(variant),
+          );
+          await install_smoke_dependencies(fixture_root, harness, tarball);
+          await build_fixture(fixture_root, "vite.config.mjs");
+        });
+      },
+    );
+
+    Deno.test(
+      `[${harness.label}] SvelteKit Form fixtures survive native descriptor inspection for ${variant.name}`,
+      async () => {
+        await with_package_build_lock(async () => {
+          const fixture_root = await makeTempWorkspace(
+            `kit-form-descriptor-${variant.name}-`,
+          );
+          const tarball = await pack_runtime_package();
+          await writeFixtureTree(
+            fixture_root,
+            create_kit_form_descriptor_fixture(variant),
           );
           await install_smoke_dependencies(fixture_root, harness, tarball);
           await build_fixture(fixture_root, "vite.config.mjs");
