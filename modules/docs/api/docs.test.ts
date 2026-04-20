@@ -69,3 +69,23 @@ Deno.test("serves canonical docs pages as html by default", async () => {
   assertEquals(response.headers.get("vary"), "Accept");
   assertStringIncludes(await response.text(), "<!DOCTYPE html>");
 });
+
+Deno.test("handles vercel-style relative request urls", async () => {
+  const response = await createDocsResponse({
+    method: "GET",
+    url: "/tooling",
+    headers: {
+      accept: "text/markdown",
+      "x-forwarded-host": "ser.barekey.dev",
+      "x-forwarded-proto": "https",
+    },
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(
+    response.headers.get("content-type"),
+    "text/markdown; charset=utf-8",
+  );
+  assertEquals(response.headers.get("vary"), "Accept");
+  assertStringIncludes(await response.text(), "# Tooling");
+});

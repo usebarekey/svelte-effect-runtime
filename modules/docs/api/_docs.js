@@ -240,8 +240,39 @@ async function createHtmlResponse(routeFiles, method) {
   return withSharedHeaders(new Response(htmlBody), "text/html", status);
 }
 
+function getRequestHeader(request, name) {
+  if (request.headers instanceof Headers) {
+    return request.headers.get(name);
+  }
+
+  const loweredName = name.toLowerCase();
+  if (typeof request.headers?.get === "function") {
+    return request.headers.get(loweredName) ?? request.headers.get(name);
+  }
+
+  if (request.headers && typeof request.headers === "object") {
+    return request.headers[loweredName] ?? request.headers[name] ?? null;
+  }
+
+  return null;
+}
+
+function getRequestUrl(request) {
+  const rawUrl = request.url ?? request.path ?? "/";
+  try {
+    return new URL(rawUrl);
+  } catch {
+    const host = getRequestHeader(request, "x-forwarded-host") ??
+      getRequestHeader(request, "host") ??
+      "localhost";
+    const protocol = getRequestHeader(request, "x-forwarded-proto") ??
+      "https";
+    return new URL(rawUrl, `${protocol}://${host}`);
+  }
+}
+
 export async function createDocsResponse(request) {
-  const method = request.method.toUpperCase();
+  const method = (request.method ?? "GET").toUpperCase();
   if (method !== "GET" && method !== "HEAD") {
     return new Response("Method Not Allowed", {
       status: 405,
@@ -252,8 +283,10 @@ export async function createDocsResponse(request) {
     });
   }
 
-  const url = new URL(request.url);
-  const negotiatedType = negotiateContentType(request.headers.get("accept"));
+  const url = getRequestUrl(request);
+  const negotiatedType = negotiateContentType(
+    getRequestHeader(request, "accept"),
+  );
   if (!negotiatedType) {
     return new Response("Not Acceptable", {
       status: 406,
