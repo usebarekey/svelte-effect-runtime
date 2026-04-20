@@ -1,4 +1,4 @@
-import { createDocsResponse, negotiateContentType } from "./_docs.ts";
+import { createDocsResponse, negotiateContentType } from "./_docs.js";
 
 function assertEquals<T>(actual: T, expected: T): void {
   if (actual !== expected) {

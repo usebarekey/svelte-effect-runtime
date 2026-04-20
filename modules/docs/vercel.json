@@ -1,7 +1,7 @@
 {
   "outputDirectory": ".vitepress/dist",
   "functions": {
-    "api/docs.ts": {
+    "api/docs.js": {
       "includeFiles": "{.vitepress/dist/**/*.html,content/**/*.md,*.md}"
     }
   },
