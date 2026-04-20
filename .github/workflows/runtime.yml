@@ -7,12 +7,6 @@ on:
     paths:
       - modules/svelte-effect-runtime/package.json
   workflow_dispatch:
-    inputs:
-      publish_runtime:
-        description: Publish the runtime package
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -95,7 +89,7 @@ jobs:
       - detect_version_bump
       - lint_and_test
       - build_runtime
-    if: needs.detect_version_bump.outputs.has_version_bump == 'true' && (github.event_name == 'push' || inputs.publish_runtime)
+    if: needs.detect_version_bump.outputs.has_version_bump == 'true'
     runs-on: ubuntu-latest
 
     steps:
