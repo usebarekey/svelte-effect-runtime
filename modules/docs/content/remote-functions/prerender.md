@@ -75,7 +75,7 @@ export const get_post_by_slug = Query(
   Effect.gen(function* () {
     const db = yield* Database;
 
-    const [post] = yield* Database.sql`
+    const [post] = yield* db.sql`
       select * from post
       where slug = ${slug}
     `;
