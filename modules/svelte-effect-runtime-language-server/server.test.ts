@@ -71,10 +71,6 @@ async function create_transform_options() {
   };
 }
 
-function to_posix_path(value: string) {
-  return value.split(path.sep).join("/");
-}
-
 async function create_checkout_fixture() {
   const fixtures_root = path.join(module_dir, ".tmp");
   await Deno.mkdir(fixtures_root, { recursive: true });
@@ -211,10 +207,15 @@ async function get_hover_text(
   needle: string,
   offset_adjustment = 0,
 ) {
+  type TextDocumentLike = {
+    uri: string;
+    text: string;
+  };
+
   const compiler = await load_compiler();
   const file_path = path.join(fixture_dir, "src", "routes", "checkout", "+page.svelte");
   const source = await Deno.readTextFile(file_path);
-  const doc_manager = new DocumentManager((textDocument: any) =>
+  const doc_manager = new DocumentManager((textDocument: TextDocumentLike) =>
     new Document(textDocument.uri, textDocument.text)
   );
   const config_manager = new LSConfigManager();

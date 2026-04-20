@@ -16,7 +16,6 @@ import {
 import {
   EFFECT_REMOTE_ERROR_MARKER,
   type FormIssue,
-  type RemoteDomainError,
 } from "../internal/remote-shared.ts";
 import { normalize_remote_helper_error } from "../v3/server.ts";
 import { create_effect_transport } from "../server.ts";
