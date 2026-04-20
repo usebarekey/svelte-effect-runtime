@@ -58,7 +58,8 @@ export interface RemoteDomainError<ErrorType = unknown> {
 
 /**
  * Remote failure emitted when request validation (schema or form) rejects the
- * payload. Always surfaces as an HTTP `400`.
+ * payload. Defaults to HTTP `400`, but callers may override the status code
+ * when constructing the value.
  */
 export interface RemoteValidationError {
   /** Discriminator identifying this variant of `RemoteFailure`. */
@@ -67,7 +68,7 @@ export interface RemoteValidationError {
   readonly body?: unknown;
   /** Validation issues, keyed by field path. */
   readonly issues: ReadonlyArray<FormIssue>;
-  /** HTTP status code - always `400` for validation errors. */
+  /** HTTP status code for the validation failure, defaulting to `400`. */
   readonly status: number;
 }
 
