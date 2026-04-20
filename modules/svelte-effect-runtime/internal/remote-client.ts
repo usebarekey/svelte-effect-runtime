@@ -3,7 +3,6 @@ import { tick } from "svelte";
 import { create_remote_effect_from_promise } from "$/client.ts";
 import { create_async_effect } from "$internal/effect-compat.ts";
 import {
-  create_remote_domain_error,
   create_remote_http_error,
   create_remote_transport_error,
   create_remote_validation_error,
@@ -174,10 +173,9 @@ function decode_remote_error<ErrorType>(
 
     if (is_serialized_remote_failure_envelope(body)) {
       try {
-        return create_remote_domain_error<ErrorType>(
-          decode_payload<ErrorType>(body.encoded),
-          get_error_status(error),
-        );
+        return decode_payload<ErrorType>(
+          body.encoded,
+        ) as RemoteFailure<ErrorType>;
       } catch (cause) {
         return create_remote_transport_error(cause, body);
       }

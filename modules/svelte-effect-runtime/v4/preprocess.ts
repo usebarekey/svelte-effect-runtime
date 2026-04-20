@@ -46,3 +46,8 @@ export function effect_preprocess(
 ): PreprocessorGroup {
   return create_effect_preprocess(with_v4_effect_preprocess_options(options));
 }
+
+/**
+ * Backwards-compatible camelCase alias retained for older downstream imports.
+ */
+export const effectPreprocess = effect_preprocess;
