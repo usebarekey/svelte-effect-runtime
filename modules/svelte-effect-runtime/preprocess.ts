@@ -31,3 +31,9 @@ export function effect_preprocess(
 ): PreprocessorGroup {
   return create_effect_preprocess(options);
 }
+
+/**
+ * Backwards-compatible camelCase alias retained for older test fixtures and
+ * downstream code that imported the preprocessor before the snake_case rename.
+ */
+export const effectPreprocess = effect_preprocess;

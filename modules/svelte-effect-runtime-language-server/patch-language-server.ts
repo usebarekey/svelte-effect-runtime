@@ -7,9 +7,10 @@ import MagicString from "magic-string";
 import { TraceMap } from "@jridgewell/trace-mapping";
 
 const require = createRequire(import.meta.url);
+const ts = require("typescript") as typeof import("typescript");
 const patch_marker = Symbol.for("svelte-effect-runtime.language-server.patch");
 const package_root = path.dirname(fileURLToPath(import.meta.url));
-const runtime_root = resolve_runtime_root(package_root);
+const runtime_import_root = resolve_runtime_import_root(package_root);
 const language_server_root = path.join(
   path.dirname(require.resolve("svelte-language-server/package.json")),
   "dist",
@@ -22,12 +23,12 @@ const { Document } = require(path.join(
   "documents",
   "Document.js",
 )) as { Document: any };
-const { SourceMapDocumentMapper } = require(path.join(
+const { FragmentMapper, SourceMapDocumentMapper } = require(path.join(
   language_server_root,
   "lib",
   "documents",
   "DocumentMapper.js",
-)) as { SourceMapDocumentMapper: any };
+)) as { FragmentMapper: any; SourceMapDocumentMapper: any };
 const { extractScriptTags } = require(path.join(
   language_server_root,
   "lib",
@@ -40,6 +41,13 @@ const { DocumentSnapshot } = require(path.join(
   "typescript",
   "DocumentSnapshot.js",
 )) as { DocumentSnapshot: any };
+const { CodeActionsProviderImpl } = require(path.join(
+  language_server_root,
+  "plugins",
+  "typescript",
+  "features",
+  "CodeActionsProvider.js",
+)) as { CodeActionsProviderImpl: any };
 const {
   TranspiledSvelteDocument,
   FallbackTranspiledSvelteDocument,
@@ -58,6 +66,17 @@ type Mapper = {
   getGeneratedPosition(position: any): any;
   isInGenerated(position: any): boolean;
 };
+
+type Relocation = {
+  originalStart: number;
+  originalEnd: number;
+  generatedStart: number;
+  generatedEnd: number;
+};
+
+function is_invalid_position(position: any) {
+  return position.line < 0 || position.character < 0;
+}
 
 export async function bootstrap_language_server() {
   if (DocumentSnapshot.fromDocument[patch_marker]) {
@@ -79,24 +98,41 @@ export async function bootstrap_language_server() {
     transformEffectMarkup: markupModule.transformEffectMarkup,
     transformEffectScript: transformModule.transformEffectScript,
   });
+  patch_typescript_code_actions();
 }
 
-function resolve_runtime_root(package_root: string) {
+function resolve_runtime_import_root(package_root: string) {
   const bundled_runtime_root = path.join(package_root, "runtime");
-  const workspace_runtime_root = path.resolve(
+  const workspace_source_root = path.resolve(
     package_root,
     "..",
     "svelte-effect-runtime",
-    "dist",
   );
+  const workspace_runtime_root = path.join(workspace_source_root, "dist");
 
-  return existsSync(workspace_runtime_root)
-    ? workspace_runtime_root
-    : bundled_runtime_root;
+  if (
+    typeof Deno !== "undefined" &&
+    existsSync(path.join(workspace_source_root, "preprocess.ts"))
+  ) {
+    return workspace_source_root;
+  }
+
+  if (existsSync(workspace_runtime_root)) {
+    return workspace_runtime_root;
+  }
+
+  return bundled_runtime_root;
 }
 
 function import_runtime_module(relativePath: string) {
-  return import(pathToFileURL(path.join(runtime_root, relativePath)).href);
+  const resolvedPath = path.join(
+    runtime_import_root,
+    runtime_import_root.endsWith(path.join("svelte-effect-runtime"))
+      ? relativePath.replace(/\.js$/, ".ts")
+      : relativePath,
+  );
+
+  return import(pathToFileURL(resolvedPath).href);
 }
 
 function patch_svelte_compiler_path(effectPreprocess: () => any) {
@@ -133,6 +169,8 @@ function patch_typescript_snapshot_path(
     };
     transformEffectScript: (code: string, options: { filename: string }) => {
       code: string;
+      map: Record<string, unknown>;
+      relocations?: Array<Relocation>;
     };
   },
 ) {
@@ -182,6 +220,48 @@ function patch_static_factory(
   target_class.create[patch_marker] = true;
 }
 
+function patch_typescript_code_actions() {
+  if (CodeActionsProviderImpl.prototype.applyQuickfix?.[patch_marker]) {
+    return;
+  }
+
+  const original_apply_quickfix = CodeActionsProviderImpl.prototype.applyQuickfix;
+
+  CodeActionsProviderImpl.prototype.applyQuickfix = async function applyQuickfix(
+    document: any,
+    range: { start: any; end: any },
+    context: any,
+    cancellationToken: any,
+  ) {
+    const { tsDoc } = await this.getLSAndTSDoc(document);
+    const generatedStart = tsDoc.getGeneratedPosition(range.start);
+    const generatedEnd = tsDoc.getGeneratedPosition(range.end);
+
+    if (
+      is_invalid_position(generatedStart) ||
+      is_invalid_position(generatedEnd)
+    ) {
+      return [];
+    }
+
+    const start = tsDoc.offsetAt(generatedStart);
+    const end = tsDoc.offsetAt(generatedEnd);
+
+    if (end < start) {
+      return [];
+    }
+
+    return original_apply_quickfix.call(
+      this,
+      document,
+      range,
+      context,
+      cancellationToken,
+    );
+  };
+  CodeActionsProviderImpl.prototype.applyQuickfix[patch_marker] = true;
+}
+
 function merge_preprocessors(existing: any, effectPreprocess: () => any) {
   if (contains_effect_preprocessor(existing)) {
     return existing;
@@ -190,7 +270,7 @@ function merge_preprocessors(existing: any, effectPreprocess: () => any) {
   const next = effectPreprocess();
 
   if (!existing) {
-    return [next];
+    return [next, create_typescript_fallback_preprocessor()];
   }
 
   if (Array.isArray(existing)) {
@@ -198,6 +278,43 @@ function merge_preprocessors(existing: any, effectPreprocess: () => any) {
   }
 
   return [next, existing];
+}
+
+function create_typescript_fallback_preprocessor() {
+  return {
+    name: "svelte-effect-runtime-language-server-ts-fallback",
+    script: ({ content, attributes, filename }: {
+      content: string;
+      attributes: Record<string, string | boolean>;
+      filename: string;
+    }) => {
+      if (attributes.lang !== "ts") {
+        return;
+      }
+
+      const { outputText, sourceMapText } = ts.transpileModule(content, {
+        fileName: filename,
+        compilerOptions: {
+          module: ts.ModuleKind.ESNext,
+          target: ts.ScriptTarget.ESNext,
+          sourceMap: true,
+          verbatimModuleSyntax: true,
+        },
+      });
+
+      return {
+        code: outputText,
+        map: sourceMapText,
+        attributes: {
+          ...Object.fromEntries(
+            Object.entries(attributes).filter(([key]) =>
+              key !== "lang" && key !== "type"
+            ),
+          ),
+        },
+      };
+    },
+  };
 }
 
 function contains_effect_preprocessor(preprocessors: any) {
@@ -218,6 +335,8 @@ function prepare_virtual_document(
     };
     transformEffectScript: (code: string, options: { filename: string }) => {
       code: string;
+      map: Record<string, unknown>;
+      relocations?: Array<Relocation>;
     };
   },
 ) {
@@ -234,6 +353,7 @@ function prepare_virtual_document(
   const scripts = extractScriptTags(currentCode);
 
   if (scripts?.script && has_own(scripts.script.attributes, "effect")) {
+    const preScriptTransformCode = currentCode;
     const magicString = new MagicString(currentCode);
     const transformedScript = transforms.transformEffectScript(
       scripts.script.content,
@@ -247,7 +367,7 @@ function prepare_virtual_document(
         transformedScript.code,
       );
       currentCode = magicString.toString();
-      scriptMapper = create_source_map_mapper(
+      const fullDocumentMapper = create_source_map_mapper(
         magicString.generateMap({
           hires: true,
           includeContent: true,
@@ -255,6 +375,23 @@ function prepare_virtual_document(
         }) as unknown as Record<string, unknown>,
         sourceUri,
       );
+      const transformedScripts = extractScriptTags(currentCode);
+      const transformedScriptTag = transformedScripts?.script;
+
+      if (transformedScriptTag) {
+        scriptMapper = create_script_content_mapper(
+          preScriptTransformCode,
+          currentCode,
+          scripts.script,
+          transformedScriptTag,
+          transformedScript.map,
+          transformedScript.relocations ?? [],
+          fullDocumentMapper,
+          sourceUri,
+        );
+      } else {
+        scriptMapper = fullDocumentMapper;
+      }
     }
   }
 
@@ -298,6 +435,278 @@ function create_source_map_mapper(
     } as any),
     sourceUri,
   ) as Mapper;
+}
+
+function create_script_content_mapper(
+  originalCode: string,
+  transformedCode: string,
+  originalTagInfo: any,
+  transformedTagInfo: any,
+  rawMap: Record<string, unknown>,
+  relocations: Array<Relocation>,
+  fullDocumentMapper: Mapper,
+  sourceUri: string,
+): Mapper {
+  const originalFragmentMapper = new FragmentMapper(
+    originalCode,
+    originalTagInfo,
+    sourceUri,
+  ) as Mapper;
+  const transformedFragmentMapper = new FragmentMapper(
+    transformedCode,
+    transformedTagInfo,
+    sourceUri,
+  ) as Mapper;
+  const sourceMapper = create_source_map_mapper(rawMap, sourceUri);
+  const relocationMapper = create_relocation_mapper(
+    originalTagInfo.content,
+    transformedTagInfo.content,
+    relocations,
+  );
+
+  return {
+    getOriginalPosition(generatedPosition: any) {
+      if (!transformedFragmentMapper.isInGenerated(generatedPosition)) {
+        return fullDocumentMapper.getOriginalPosition(generatedPosition);
+      }
+
+      const positionInTransformedFragment =
+        transformedFragmentMapper.getGeneratedPosition(generatedPosition);
+
+      if (is_invalid_position(positionInTransformedFragment)) {
+        return positionInTransformedFragment;
+      }
+
+      const relocatedOriginalPosition =
+        relocationMapper?.getOriginalPosition(positionInTransformedFragment);
+
+      if (
+        relocatedOriginalPosition &&
+        !is_invalid_position(relocatedOriginalPosition)
+      ) {
+        return originalFragmentMapper.getOriginalPosition(relocatedOriginalPosition);
+      }
+
+      const positionInOriginalFragment = sourceMapper.getOriginalPosition(
+        positionInTransformedFragment,
+      );
+
+      if (is_invalid_position(positionInOriginalFragment)) {
+        return positionInOriginalFragment;
+      }
+
+      return originalFragmentMapper.getOriginalPosition(positionInOriginalFragment);
+    },
+    getGeneratedPosition(originalPosition: any) {
+      if (!originalFragmentMapper.isInGenerated(originalPosition)) {
+        return fullDocumentMapper.getGeneratedPosition(originalPosition);
+      }
+
+      const positionInOriginalFragment =
+        originalFragmentMapper.getGeneratedPosition(originalPosition);
+
+      if (is_invalid_position(positionInOriginalFragment)) {
+        return positionInOriginalFragment;
+      }
+
+      const relocatedGeneratedPosition =
+        relocationMapper?.getGeneratedPosition(positionInOriginalFragment);
+
+      if (
+        relocatedGeneratedPosition &&
+        !is_invalid_position(relocatedGeneratedPosition)
+      ) {
+        return transformedFragmentMapper.getOriginalPosition(
+          relocatedGeneratedPosition,
+        );
+      }
+
+      const positionInTransformedFragment = sourceMapper.getGeneratedPosition(
+        positionInOriginalFragment,
+      );
+
+      if (is_invalid_position(positionInTransformedFragment)) {
+        return positionInTransformedFragment;
+      }
+
+      return transformedFragmentMapper.getOriginalPosition(
+        positionInTransformedFragment,
+      );
+    },
+    isInGenerated(originalPosition: any) {
+      const generatedPosition = this.getGeneratedPosition(originalPosition);
+      return !is_invalid_position(generatedPosition);
+    },
+  };
+}
+
+function create_relocation_mapper(
+  originalContent: string,
+  transformedContent: string,
+  relocations: Array<Relocation>,
+): Mapper | null {
+  if (relocations.length === 0) {
+    return null;
+  }
+
+  const originalOffsets = new OffsetTable(originalContent);
+  const transformedOffsets = new OffsetTable(transformedContent);
+
+  return {
+    getOriginalPosition(generatedPosition: any) {
+      const generatedOffset = transformedOffsets.offsetAt(generatedPosition);
+      const relocation = find_relocation(
+        relocations,
+        generatedOffset,
+        "generatedStart",
+        "generatedEnd",
+      );
+
+      if (!relocation) {
+        return { line: -1, character: -1 };
+      }
+
+      return originalOffsets.positionAt(
+        map_offset_between_ranges(
+          generatedOffset,
+          relocation.generatedStart,
+          relocation.generatedEnd,
+          relocation.originalStart,
+          relocation.originalEnd,
+        ),
+      );
+    },
+    getGeneratedPosition(originalPosition: any) {
+      const originalOffset = originalOffsets.offsetAt(originalPosition);
+      const relocation = find_relocation(
+        relocations,
+        originalOffset,
+        "originalStart",
+        "originalEnd",
+      );
+
+      if (!relocation) {
+        return { line: -1, character: -1 };
+      }
+
+      return transformedOffsets.positionAt(
+        map_offset_between_ranges(
+          originalOffset,
+          relocation.originalStart,
+          relocation.originalEnd,
+          relocation.generatedStart,
+          relocation.generatedEnd,
+        ),
+      );
+    },
+    isInGenerated(originalPosition: any) {
+      return !is_invalid_position(this.getGeneratedPosition(originalPosition));
+    },
+  };
+}
+
+function find_relocation(
+  relocations: Array<Relocation>,
+  offset: number,
+  startKey: "originalStart" | "generatedStart",
+  endKey: "originalEnd" | "generatedEnd",
+) {
+  let match: Relocation | null = null;
+
+  for (const relocation of relocations) {
+    if (offset < relocation[startKey] || offset > relocation[endKey]) {
+      continue;
+    }
+
+    if (
+      !match ||
+      relocation[endKey] - relocation[startKey] <
+        match[endKey] - match[startKey]
+    ) {
+      match = relocation;
+    }
+  }
+
+  return match;
+}
+
+function map_offset_between_ranges(
+  offset: number,
+  sourceStart: number,
+  sourceEnd: number,
+  targetStart: number,
+  targetEnd: number,
+) {
+  if (offset <= sourceStart) {
+    return targetStart;
+  }
+
+  if (offset >= sourceEnd) {
+    return targetEnd;
+  }
+
+  const sourceLength = Math.max(sourceEnd - sourceStart, 1);
+  const targetLength = Math.max(targetEnd - targetStart, 1);
+  const relativeOffset = Math.min(
+    Math.max(offset - sourceStart, 0),
+    sourceLength - 1,
+  );
+
+  return targetStart + Math.min(relativeOffset, targetLength - 1);
+}
+
+class OffsetTable {
+  private readonly lineStarts: number[];
+
+  constructor(text: string) {
+    this.lineStarts = [0];
+
+    for (let index = 0; index < text.length; index++) {
+      if (text.charCodeAt(index) === 10) {
+        this.lineStarts.push(index + 1);
+      }
+    }
+  }
+
+  offsetAt(position: { line: number; character: number }) {
+    if (position.line < 0 || position.line >= this.lineStarts.length) {
+      return -1;
+    }
+
+    return this.lineStarts[position.line] + position.character;
+  }
+
+  positionAt(offset: number) {
+    if (offset < 0) {
+      return { line: -1, character: -1 };
+    }
+
+    let low = 0;
+    let high = this.lineStarts.length - 1;
+
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const lineStart = this.lineStarts[middle];
+      const nextLineStart = this.lineStarts[middle + 1] ?? Number.POSITIVE_INFINITY;
+
+      if (offset < lineStart) {
+        high = middle - 1;
+        continue;
+      }
+
+      if (offset >= nextLineStart) {
+        low = middle + 1;
+        continue;
+      }
+
+      return {
+        line: middle,
+        character: offset - lineStart,
+      };
+    }
+
+    return { line: -1, character: -1 };
+  }
 }
 
 function rebind_snapshot_to_original_document(
@@ -408,7 +817,7 @@ function map_offset_to_original(
     preprocessedDocument.positionAt(offset),
   );
 
-  if (originalPosition.line < 0 || originalPosition.character < 0) {
+  if (is_invalid_position(originalPosition)) {
     return offset;
   }
 
@@ -422,17 +831,23 @@ class SequentialDocumentMapper {
   ) {}
 
   getOriginalPosition(generatedPosition: any) {
-    return this.mappers.reduce(
-      (position, mapper) => mapper.getOriginalPosition(position),
-      generatedPosition,
-    );
+    return this.mappers.reduce((position, mapper) => {
+      if (is_invalid_position(position)) {
+        return position;
+      }
+
+      return mapper.getOriginalPosition(position);
+    }, generatedPosition);
   }
 
   getGeneratedPosition(originalPosition: any) {
-    return [...this.mappers].reverse().reduce(
-      (position, mapper) => mapper.getGeneratedPosition(position),
-      originalPosition,
-    );
+    return [...this.mappers].reverse().reduce((position, mapper) => {
+      if (is_invalid_position(position)) {
+        return position;
+      }
+
+      return mapper.getGeneratedPosition(position);
+    }, originalPosition);
   }
 
   isInGenerated(originalPosition: any) {
@@ -459,16 +874,21 @@ class SnapshotDocumentMapper {
   }
 
   getGeneratedPosition(originalPosition: any) {
-    return this.innerMapper.getGeneratedPosition(
-      this.preprocessMapper.getGeneratedPosition(originalPosition),
-    );
+    const preprocessedPosition =
+      this.preprocessMapper.getGeneratedPosition(originalPosition);
+
+    if (is_invalid_position(preprocessedPosition)) {
+      return preprocessedPosition;
+    }
+
+    return this.innerMapper.getGeneratedPosition(preprocessedPosition);
   }
 
   isInGenerated(originalPosition: any) {
     const preprocessedPosition =
       this.preprocessMapper.getGeneratedPosition(originalPosition);
 
-    if (preprocessedPosition.line < 0 || preprocessedPosition.character < 0) {
+    if (is_invalid_position(preprocessedPosition)) {
       return false;
     }
 

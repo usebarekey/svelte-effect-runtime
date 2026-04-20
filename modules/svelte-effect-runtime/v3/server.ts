@@ -523,7 +523,57 @@ function log_remote_server_step(
     return;
   }
 
-  console.log("[svelte-effect-runtime][server]", step, details ?? {});
+  console.log(
+    "[svelte-effect-runtime][server]",
+    step,
+    details ? summarize_log_details(details) : {},
+  );
+}
+
+/**
+ * Tagged Effect failures are often `Data.TaggedError` subclasses (i.e. real
+ * `Error` objects). `console.log`-ing them dumps the full JS stack — which
+ * looks like a server crash, even though the failure is a modelled,
+ * caller-handleable error. Render such values as their tag + enumerable data
+ * instead so the dev log stays readable.
+ */
+function summarize_log_details(
+  details: Record<string, unknown>,
+): Record<string, unknown> {
+  const summarized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(details)) {
+    summarized[key] = summarize_log_value(value);
+  }
+
+  return summarized;
+}
+
+function summarize_log_value(value: unknown): unknown {
+  if (!(value instanceof Error)) {
+    return value;
+  }
+
+  const tag = (value as { _tag?: unknown })._tag;
+
+  if (typeof tag !== "string") {
+    return value;
+  }
+
+  const summary: Record<string, unknown> = {
+    _tag: tag,
+    message: value.message,
+  };
+
+  for (const name of Object.getOwnPropertyNames(value)) {
+    if (name === "stack" || name === "message" || name === "_tag") {
+      continue;
+    }
+
+    summary[name] = (value as unknown as Record<string, unknown>)[name];
+  }
+
+  return summary;
 }
 
 function encode_remote_failure(failure: unknown): never {

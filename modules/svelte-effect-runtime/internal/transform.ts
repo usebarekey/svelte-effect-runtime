@@ -23,12 +23,43 @@ interface TransformEffectScriptOptions extends EffectPreprocessOptions {
 interface TransformEffectScriptResult {
   code: string;
   map: SourceMap;
+  relocations: Array<TransformRelocation>;
 }
 
 interface VariableStatementTransform {
   effectTexts: string[];
   hoistedText: string;
   loweredBindings: string[];
+  pendingRelocations: Array<PendingRelocation>;
+  usesPendingYieldHelper: boolean;
+}
+
+interface TransformRelocation {
+  originalStart: number;
+  originalEnd: number;
+  generatedStart: number;
+  generatedEnd: number;
+}
+
+interface PendingRelocation {
+  originalStart: number;
+  originalEnd: number;
+  generatedSnippet: string;
+  generatedInnerStart: number;
+  generatedInnerEnd: number;
+}
+
+interface StateDeclarationTransform {
+  code: string;
+  pendingRelocations: Array<PendingRelocation>;
+}
+
+interface LoweredDeclarationHelper {
+  declarationText: string;
+  stateTypeText: string;
+  assignmentExpression: string;
+  expressionRelocation: PendingRelocation;
+  tempName?: string;
 }
 
 const HOISTED_KINDS = new Set<ts.SyntaxKind>([
@@ -65,6 +96,7 @@ export function transformEffectScript(
 
   const effectStatements: Array<{ node: ts.Statement; text: string }> = [];
   const runtimeStatements: string[] = [];
+  const pendingRelocations: Array<PendingRelocation> = [];
   const magicString = new MagicString(content);
   const effectBoundBindings = new Set<string>();
 
@@ -92,6 +124,7 @@ export function transformEffectScript(
       }
 
       runtimeStatements.push(...transformed.effectTexts);
+      pendingRelocations.push(...transformed.pendingRelocations);
       for (const bindingName of transformed.loweredBindings) {
         effectBoundBindings.add(bindingName);
       }
@@ -116,6 +149,14 @@ export function transformEffectScript(
       node: statement,
       text: normalizeStatementText(sliceNode(content, statement)),
     });
+    pendingRelocations.push({
+      originalStart: statement.getStart(sourceFile),
+      originalEnd: statement.end,
+      generatedSnippet: normalizeStatementText(sliceNode(content, statement)),
+      generatedInnerStart: 0,
+      generatedInnerEnd: normalizeStatementText(sliceNode(content, statement))
+        .length,
+    });
   }
 
   for (const statement of [...effectStatements].reverse()) {
@@ -132,13 +173,16 @@ export function transformEffectScript(
     magicString.append(makeRuntimeBlock(allRuntimeStatements));
   }
 
+  const code = magicString.toString();
+
   return {
-    code: magicString.toString(),
+    code,
     map: magicString.generateMap({
       hires: true,
       includeContent: true,
       source: options.filename,
     }),
+    relocations: resolvePendingRelocations(pendingRelocations, code),
   };
 }
 
@@ -189,12 +233,15 @@ function transformVariableStatement(
       effectTexts: [],
       hoistedText: normalizeStatementText(sliceNode(content, statement)),
       loweredBindings: [],
+      pendingRelocations: [],
+      usesPendingYieldHelper: false,
     };
   }
 
   const effectTexts: string[] = [];
   const hoistedDeclarations: string[] = [];
   const loweredBindings: string[] = [];
+  const pendingRelocations: Array<PendingRelocation> = [];
 
   for (const declaration of statement.declarationList.declarations) {
     if (
@@ -210,10 +257,13 @@ function transformVariableStatement(
     }
 
     if (declaration.initializer && isRuneInitializer(declaration.initializer)) {
-      hoistedDeclarations.push(
+      const renderedDeclaration =
         `${getDeclarationKind(statement.declarationList.flags)} ${
           normalizeStatementText(sliceNode(content, declaration))
-        };`,
+        };`;
+      hoistedDeclarations.push(renderedDeclaration);
+      pendingRelocations.push(
+        ...make_declaration_relocations(declaration, renderedDeclaration, content),
       );
       continue;
     }
@@ -225,31 +275,72 @@ function transformVariableStatement(
         effectBoundBindings,
       )
     ) {
-      hoistedDeclarations.push(
+      const renderedDeclaration =
         `${getDeclarationKind(statement.declarationList.flags)} ${
           normalizeStatementText(sliceNode(content, declaration))
-        };`,
+        };`;
+      hoistedDeclarations.push(renderedDeclaration);
+      pendingRelocations.push(
+        ...make_declaration_relocations(declaration, renderedDeclaration, content),
       );
       continue;
     }
 
     const bindingNames = extractBindingNames(declaration.name);
+    const helper = create_lowered_declaration_helper(declaration, content);
+
+    if (helper) {
+      hoistedDeclarations.push(helper.declarationText);
+      pendingRelocations.push(helper.expressionRelocation);
+    }
+
+    if (helper?.tempName) {
+      hoistedDeclarations.push(
+        makeTypedStateBinding(helper.tempName, helper.stateTypeText),
+      );
+    }
 
     for (const bindingName of bindingNames) {
-      hoistedDeclarations.push(
-        makeStateDeclaration(bindingName, declaration, content),
+      const stateDeclaration = makeStateDeclaration(
+        bindingName,
+        declaration,
+        content,
+        helper?.tempName ? null : helper?.stateTypeText,
       );
+      hoistedDeclarations.push(stateDeclaration.code);
+      pendingRelocations.push(...stateDeclaration.pendingRelocations);
     }
     loweredBindings.push(...bindingNames);
 
     if (declaration.initializer) {
-      effectTexts.push(
-        makeEffectAssignment(
-          declaration.name,
-          declaration.initializer,
-          content,
-        ),
-      );
+      if (helper?.tempName) {
+        effectTexts.push(`${helper.tempName} = ${helper.assignmentExpression};`);
+        effectTexts.push(
+          makeEffectAssignment(
+            declaration.name,
+            helper.tempName,
+            content,
+          ),
+        );
+      } else {
+        const effectAssignment = helper
+          ? `${bindingNames[0]} = ${helper.assignmentExpression};`
+          : makeEffectAssignment(
+            declaration.name,
+            declaration.initializer,
+            content,
+          );
+        effectTexts.push(effectAssignment);
+        if (!helper) {
+          pendingRelocations.push(
+            makeEffectAssignmentRelocation(
+              declaration.initializer,
+              effectAssignment,
+              content,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -257,6 +348,8 @@ function transformVariableStatement(
     effectTexts,
     hoistedText: hoistedDeclarations.join("\n"),
     loweredBindings,
+    pendingRelocations,
+    usesPendingYieldHelper: false,
   };
 }
 
@@ -420,30 +513,74 @@ function makeStateDeclaration(
   name: string,
   declaration: ts.VariableDeclaration,
   content: string,
-): string {
+  inferredTypeText?: string | null,
+): StateDeclarationTransform {
+  let stateTypeText: string | null = null;
+
   if (ts.isIdentifier(declaration.name) && declaration.type) {
-    const typeText = normalizeStatementText(
+    stateTypeText = normalizeStatementText(
       sliceNode(content, declaration.type),
     );
-    return `let ${name} = $state<${typeText} | undefined>(undefined);`;
+  } else if (inferredTypeText) {
+    stateTypeText = inferredTypeText;
   }
 
-  return `let ${name} = $state<any>(undefined);`;
+  const code = stateTypeText
+    ? makeTypedStateBinding(name, stateTypeText)
+    : `let ${name} = $state<any>(undefined);`;
+
+  const nameStart = code.indexOf(name);
+  const pendingRelocations: Array<PendingRelocation> = [{
+    originalStart: find_binding_name_start(declaration.name, name),
+    originalEnd: find_binding_name_end(declaration.name, name),
+    generatedSnippet: "",
+    generatedInnerStart: nameStart,
+    generatedInnerEnd: nameStart + name.length,
+  }];
+
+  pendingRelocations[0] = {
+    ...pendingRelocations[0],
+    generatedSnippet: code,
+  };
+
+  return {
+    code,
+    pendingRelocations,
+  };
 }
 
 function makeEffectAssignment(
   name: ts.BindingName,
-  initializer: ts.Expression,
+  initializer: ts.Expression | string,
   content: string,
 ): string {
   const target = normalizeStatementText(sliceNode(content, name));
-  const expression = normalizeStatementText(sliceNode(content, initializer));
+  const expression = typeof initializer === "string"
+    ? initializer
+    : normalizeStatementText(sliceNode(content, initializer));
 
   if (ts.isIdentifier(name)) {
     return `${target} = ${expression};`;
   }
 
   return `(${target} = ${expression});`;
+}
+
+function makeEffectAssignmentRelocation(
+  initializer: ts.Expression,
+  effectAssignment: string,
+  content: string,
+): PendingRelocation {
+  const expression = normalizeStatementText(sliceNode(content, initializer));
+  const generatedInnerStart = effectAssignment.lastIndexOf(expression);
+
+  return {
+    originalStart: initializer.getStart(),
+    originalEnd: initializer.end,
+    generatedSnippet: effectAssignment,
+    generatedInnerStart,
+    generatedInnerEnd: generatedInnerStart + expression.length,
+  };
 }
 
 function extractBindingNames(name: ts.BindingName): string[] {
@@ -499,6 +636,20 @@ function containsYieldStar(node: ts.Node): boolean {
   );
 }
 
+function getYieldOperand(node: ts.Node | undefined): ts.Expression | null {
+  if (
+    node &&
+    ts.isBinaryExpression(node) &&
+    node.operatorToken.kind === ts.SyntaxKind.AsteriskToken &&
+    ts.isIdentifier(node.left) &&
+    node.left.text === "yield"
+  ) {
+    return node.right;
+  }
+
+  return null;
+}
+
 function containsTopLevelAwait(node: ts.Node): boolean {
   if (ts.isAwaitExpression(node)) {
     return true;
@@ -532,17 +683,143 @@ function indentBlock(text: string, indent: string): string {
   ).join("\n");
 }
 
-function makeInjectedImports(options: TransformEffectScriptOptions): string {
+function makeInjectedImports(
+  options: TransformEffectScriptOptions,
+): string {
   const runtimeModuleId = options.runtimeModuleId ?? DEFAULT_RUNTIME_MODULE_ID;
   const effectModuleId = options.effectModuleId ?? DEFAULT_EFFECT_MODULE_ID;
   const svelteModuleId = options.svelteModuleId ?? DEFAULT_SVELTE_MODULE_ID;
 
-  return [
+  const lines = [
     `import { onMount as __svelteEffectRuntimeOnMount } from "${svelteModuleId}";`,
     `import { Effect as __svelteEffectRuntimeEffect } from "${effectModuleId}";`,
     `import { get_effect_runtime_or_throw as __svelteEffectRuntimeGetRuntime, run_component_effect as __svelteEffectRuntimeRunComponentEffect } from "${runtimeModuleId}";`,
-    "",
-  ].join("\n");
+    `type __svelteEffectRuntimeYielded<T> = T extends __svelteEffectRuntimeEffect.Effect<infer A, any, any> ? A : T;`,
+  ];
+
+  lines.push("");
+  return lines.join("\n");
+}
+
+function makeTypedStateBinding(name: string, stateTypeText: string): string {
+  return `let ${name}: ${stateTypeText} | undefined = $state(undefined as ${stateTypeText} | undefined);`;
+}
+
+function create_lowered_declaration_helper(
+  declaration: ts.VariableDeclaration,
+  content: string,
+): LoweredDeclarationHelper | null {
+  if (declaration.type || !declaration.initializer) {
+    return null;
+  }
+
+  const bindingNames = extractBindingNames(declaration.name);
+  const suffix = declaration.getStart();
+  const baseName = bindingNames[0] ?? "binding";
+  const helperName = `__svelteEffectRuntime_${baseName}_${suffix}`;
+  const expressionNode = getYieldOperand(declaration.initializer) ??
+    declaration.initializer;
+  const expressionText = normalizeStatementText(sliceNode(content, expressionNode));
+  const declarationText = `const ${helperName} = () => ${expressionText};`;
+  const yieldedExpression = getYieldOperand(declaration.initializer);
+  const stateTypeText = yieldedExpression
+    ? `__svelteEffectRuntimeYielded<ReturnType<typeof ${helperName}>>`
+    : `ReturnType<typeof ${helperName}>`;
+  const assignmentExpression = yieldedExpression
+    ? `yield* ${helperName}()`
+    : `${helperName}()`;
+
+  return {
+    declarationText,
+    stateTypeText,
+    assignmentExpression,
+    tempName: ts.isIdentifier(declaration.name)
+      ? undefined
+      : `__svelteEffectRuntimeTemp_${suffix}`,
+    expressionRelocation: {
+      originalStart: expressionNode.getStart(),
+      originalEnd: expressionNode.end,
+      generatedSnippet: declarationText,
+      generatedInnerStart: declarationText.lastIndexOf(expressionText),
+      generatedInnerEnd: declarationText.lastIndexOf(expressionText) +
+        expressionText.length,
+    },
+  };
+}
+
+function make_declaration_relocations(
+  declaration: ts.VariableDeclaration,
+  renderedDeclaration: string,
+  content: string,
+): Array<PendingRelocation> {
+  const relocations: Array<PendingRelocation> = [];
+
+  if (ts.isIdentifier(declaration.name)) {
+    const nameStart = renderedDeclaration.indexOf(declaration.name.text);
+    relocations.push({
+      originalStart: declaration.name.getStart(),
+      originalEnd: declaration.name.end,
+      generatedSnippet: renderedDeclaration,
+      generatedInnerStart: nameStart,
+      generatedInnerEnd: nameStart + declaration.name.text.length,
+    });
+  }
+
+  if (declaration.initializer) {
+    const initializerText = normalizeStatementText(
+      sliceNode(content, declaration.initializer),
+    );
+    const initializerStart = renderedDeclaration.lastIndexOf(initializerText);
+    if (initializerStart >= 0) {
+      relocations.push({
+        originalStart: declaration.initializer.getStart(),
+        originalEnd: declaration.initializer.end,
+        generatedSnippet: renderedDeclaration,
+        generatedInnerStart: initializerStart,
+        generatedInnerEnd: initializerStart + initializerText.length,
+      });
+    }
+  }
+
+  return relocations;
+}
+
+function find_binding_name_start(name: ts.BindingName, bindingName: string): number {
+  if (ts.isIdentifier(name)) {
+    return name.text === bindingName ? name.getStart() : -1;
+  }
+
+  for (const element of name.elements) {
+    if (ts.isOmittedExpression(element)) {
+      continue;
+    }
+
+    const start = find_binding_name_start(element.name, bindingName);
+    if (start !== -1) {
+      return start;
+    }
+  }
+
+  return -1;
+}
+
+function find_binding_name_end(name: ts.BindingName, bindingName: string): number {
+  if (ts.isIdentifier(name)) {
+    return name.text === bindingName ? name.end : -1;
+  }
+
+  for (const element of name.elements) {
+    if (ts.isOmittedExpression(element)) {
+      continue;
+    }
+
+    const end = find_binding_name_end(element.name, bindingName);
+    if (end !== -1) {
+      return end;
+    }
+  }
+
+  return -1;
 }
 
 function makeRuntimeBlock(statements: string[]): string {
@@ -566,4 +843,30 @@ function makeRuntimeBlock(statements: string[]): string {
     "});",
     "",
   ].join("\n");
+}
+
+function resolvePendingRelocations(
+  pendingRelocations: Array<PendingRelocation>,
+  code: string,
+): Array<TransformRelocation> {
+  const relocations: Array<TransformRelocation> = [];
+  let searchStart = 0;
+
+  for (const relocation of pendingRelocations) {
+    const generatedStart = code.indexOf(relocation.generatedSnippet, searchStart);
+
+    if (generatedStart === -1) {
+      continue;
+    }
+
+    searchStart = generatedStart + relocation.generatedSnippet.length;
+    relocations.push({
+      originalStart: relocation.originalStart,
+      originalEnd: relocation.originalEnd,
+      generatedStart: generatedStart + relocation.generatedInnerStart,
+      generatedEnd: generatedStart + relocation.generatedInnerEnd,
+    });
+  }
+
+  return relocations;
 }

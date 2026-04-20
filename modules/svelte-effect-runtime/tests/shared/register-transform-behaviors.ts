@@ -54,8 +54,18 @@ export function register_transform_behaviors(harness: VersionHarness): void {
         result.code,
         `const __svelteEffectRuntimeProgram = __svelteEffectRuntimeEffect.gen(function* () {`,
       );
-      assertStringIncludes(result.code, `count = yield* Effect.succeed(42);`);
-      assertMatch(result.code, /let count = \$state<any>\(undefined\);/);
+      assertMatch(
+        result.code,
+        /const __svelteEffectRuntime_count_\d+ = \(\) => Effect\.succeed\(42\);/,
+      );
+      assertMatch(
+        result.code,
+        /let count: __svelteEffectRuntimeYielded<ReturnType<typeof __svelteEffectRuntime_count_\d+>> \| undefined = \$state\(undefined as __svelteEffectRuntimeYielded<ReturnType<typeof __svelteEffectRuntime_count_\d+>> \| undefined\);/,
+      );
+      assertMatch(
+        result.code,
+        /count = yield\* __svelteEffectRuntime_count_\d+\(\);/,
+      );
     },
   );
 
@@ -101,7 +111,7 @@ export function register_transform_behaviors(harness: VersionHarness): void {
 
       assertStringIncludes(
         result.code,
-        `let count = $state<number | undefined>(undefined);`,
+        `let count: number | undefined = $state(undefined as number | undefined);`,
       );
     },
   );
@@ -120,9 +130,21 @@ export function register_transform_behaviors(harness: VersionHarness): void {
       });
 
       assertStringIncludes(result.code, `let value = $state<any>(undefined);`);
-      assertStringIncludes(
+      assertMatch(
         result.code,
-        `({ value } = yield* Effect.succeed({ value: 1 }));`,
+        /const __svelteEffectRuntime_value_\d+ = \(\) => Effect\.succeed\(\{ value: 1 \}\);/,
+      );
+      assertMatch(
+        result.code,
+        /let __svelteEffectRuntimeTemp_\d+: __svelteEffectRuntimeYielded<ReturnType<typeof __svelteEffectRuntime_value_\d+>> \| undefined = \$state\(undefined as __svelteEffectRuntimeYielded<ReturnType<typeof __svelteEffectRuntime_value_\d+>> \| undefined\);/,
+      );
+      assertMatch(
+        result.code,
+        /__svelteEffectRuntimeTemp_\d+ = yield\* __svelteEffectRuntime_value_\d+\(\);/,
+      );
+      assertMatch(
+        result.code,
+        /\(\{ value \} = __svelteEffectRuntimeTemp_\d+\);/,
       );
     },
   );
@@ -143,14 +165,17 @@ export function register_transform_behaviors(harness: VersionHarness): void {
         filename: "Derived.svelte",
       });
 
-      assertStringIncludes(result.code, `let count = $state<any>(undefined);`);
-      assertStringIncludes(
+      assertMatch(
         result.code,
-        `let doubled = $state<any>(undefined);`,
+        /let count: __svelteEffectRuntimeYielded<ReturnType<typeof __svelteEffectRuntime_count_\d+>> \| undefined = \$state\(undefined as __svelteEffectRuntimeYielded<ReturnType<typeof __svelteEffectRuntime_count_\d+>> \| undefined\);/,
       );
       assertMatch(
         result.code,
-        /count = yield\* Effect\.succeed\(2\);\s+doubled = count \* 2;/s,
+        /let doubled: ReturnType<typeof __svelteEffectRuntime_doubled_\d+> \| undefined = \$state\(undefined as ReturnType<typeof __svelteEffectRuntime_doubled_\d+> \| undefined\);/,
+      );
+      assertMatch(
+        result.code,
+        /count = yield\* __svelteEffectRuntime_count_\d+\(\);\s+doubled = __svelteEffectRuntime_doubled_\d+\(\);/s,
       );
     },
   );

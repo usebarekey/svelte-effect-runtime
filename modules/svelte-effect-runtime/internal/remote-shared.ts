@@ -44,8 +44,13 @@ export interface FormError<SchemaType = unknown> {
 }
 
 /**
- * Remote failure carrying a domain error defined by the server-side
- * `Effect.fail(...)`. Preserves the original error value across the wire.
+ * Legacy wrapper around a typed server-side domain error value.
+ *
+ * @deprecated Tagged remote domain errors are no longer wrapped in
+ * `RemoteDomainError`. The user's own tagged error is now placed directly on
+ * the Effect error channel so `Effect.catchTag("YourTag", ...)` works without
+ * unwrapping. This interface is kept only for backwards compatibility with
+ * code that pattern-matched on `_tag === "RemoteDomainError"`.
  */
 export interface RemoteDomainError<ErrorType = unknown> {
   /** Discriminator identifying this variant of `RemoteFailure`. */
@@ -101,11 +106,15 @@ export interface RemoteTransportError {
 }
 
 /**
- * Union of every failure shape a remote function can produce on the client.
- * Use `_tag` to narrow before handling.
+ * Error channel produced by every remote Effect wrapper. A server-side
+ * `Effect.fail(MyTaggedError)` surfaces on the client as the raw `ErrorType`,
+ * so `Effect.catchTag("MyTag", ...)` narrows directly to your error. The
+ * framework-level failure variants (`RemoteValidationError`,
+ * `RemoteHttpError`, `RemoteTransportError`) are still included for transport
+ * and HTTP failures that the caller didn't model explicitly.
  */
 export type RemoteFailure<ErrorType = unknown> =
-  | RemoteDomainError<ErrorType>
+  | ErrorType
   | RemoteValidationError
   | RemoteHttpError
   | RemoteTransportError;
@@ -139,6 +148,11 @@ export function create_form_error<SchemaType = unknown>(
 
 /**
  * Build a {@link RemoteDomainError} around a typed server-side error value.
+ *
+ * @deprecated Remote tagged failures are no longer wrapped - the user's
+ * tagged error is forwarded directly on the Effect error channel. This helper
+ * is retained for backwards compatibility with downstream code that still
+ * constructs `RemoteDomainError` values explicitly.
  *
  * @internal Internal - do not use.
  */

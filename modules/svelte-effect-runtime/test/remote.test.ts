@@ -114,8 +114,7 @@ Deno.test("query adapter decodes domain failures into the Effect error channel",
     unknown,
     {
       _tag: string;
-      cause: unknown;
-      status: number;
+      id: string;
     },
     never
   >;
@@ -129,14 +128,7 @@ Deno.test("query adapter decodes domain failures into the Effect error channel",
 
   const failure = Cause.failureOption(exit.cause);
   assertEquals(Option.isSome(failure), true);
-  assertEquals(
-    Option.getOrUndefined(failure),
-    {
-      _tag: "RemoteDomainError",
-      cause: payload,
-      status: 409,
-    },
-  );
+  assertEquals(Option.getOrUndefined(failure), payload);
 
   assertEquals(to_native(get_post) instanceof Function, true);
 });
@@ -163,22 +155,21 @@ Deno.test("query adapter supports catchTag over transported remote domain errors
   const get_provider = query_factory("hash/get_provider") as () =>
     Effect.Effect<
       unknown,
-      RemoteDomainError<{
-        _tag: "ProviderBusyError";
-        provider: string;
-        retryAfterMs: number;
-      }>,
+      {
+        readonly _tag: "ProviderBusyError";
+        readonly provider: string;
+        readonly retryAfterMs: number;
+      },
       never
     >;
 
   const result = await Effect.runPromise(
     get_provider().pipe(
-      Effect.catchTag("RemoteDomainError", (error) =>
+      Effect.catchTag("ProviderBusyError", (error) =>
         Effect.succeed({
-          matchedTag: error.cause._tag,
-          provider: error.cause.provider,
-          retryAfterMs: error.cause.retryAfterMs,
-          status: error.status,
+          matchedTag: error._tag,
+          provider: error.provider,
+          retryAfterMs: error.retryAfterMs,
         })),
     ),
   );
@@ -187,7 +178,6 @@ Deno.test("query adapter supports catchTag over transported remote domain errors
     matchedTag: "ProviderBusyError",
     provider: "github",
     retryAfterMs: 1500,
-    status: 503,
   });
 });
 
@@ -223,14 +213,7 @@ Deno.test("to_effect preserves typed remote failures for native remote calls", a
 
   const failure = Cause.failureOption(exit.cause);
   assertEquals(Option.isSome(failure), true);
-  assertEquals(
-    Option.getOrUndefined(failure),
-    {
-      _tag: "RemoteDomainError",
-      cause: payload,
-      status: 409,
-    },
-  );
+  assertEquals(Option.getOrUndefined(failure), payload);
 });
 
 Deno.test("command adapter proxies pending and preserves native access", () => {
