@@ -8,7 +8,6 @@
   •
   <a href="https://marketplace.visualstudio.com/items?itemName=Barekey.svelte-effect-runtime-vscode">Visual Studio Marketplace</a>
 </p>
-
-<p>
+<p align="center">
   Visit the <a href="https://ser.barekey.dev">docs</a> for more information.
 </p>
