@@ -1,3 +1,28 @@
+/**
+ * Default server-side entrypoint for `svelte-effect-runtime`.
+ *
+ * Re-exports the v3 remote-function helpers (`Query`, `Command`, `Form`,
+ * `Prerender`), the `ServerRuntime` builder, and the `RequestEvent` service
+ * tag. Consumers normally import this module indirectly: the Vite plugin
+ * rewrites the public runtime specifier to this subpath inside `.remote.ts`
+ * files so the real implementation runs server-side.
+ *
+ * @example
+ * ```ts
+ * import { Query, ServerRuntime } from "svelte-effect-runtime/_server";
+ * import { Effect, Schema } from "effect";
+ *
+ * ServerRuntime.make();
+ *
+ * export const hello = Query(Schema.String, (name) =>
+ *   Effect.succeed(`hello ${name}`)
+ * );
+ * ```
+ *
+ * @see https://ser.barekey.dev/content/reference/server-runtime
+ *
+ * @module
+ */
 import * as Server_module from "$/v3/server.ts";
 
 export type * from "$/v3/server.ts";

@@ -1,3 +1,28 @@
+/**
+ * v3 server-side entrypoint for `svelte-effect-runtime`.
+ *
+ * Implements the Effect-aware wrappers around SvelteKit's remote-function
+ * primitives (`query`, `command`, `form`, `prerender`) together with the
+ * `ServerRuntime` builder and the `RequestEvent` service tag. Applications
+ * rarely import this module directly — the Vite plugin rewrites imports
+ * inside `.remote.ts` files to resolve here automatically.
+ *
+ * @example
+ * ```ts
+ * import { Query, ServerRuntime } from "svelte-effect-runtime/v3/_server";
+ * import { Effect, Schema } from "effect";
+ *
+ * ServerRuntime.make();
+ *
+ * export const hello = Query(Schema.String, (name) =>
+ *   Effect.succeed(`hello ${name}`)
+ * );
+ * ```
+ *
+ * @see https://ser.barekey.dev/content/reference/server-runtime
+ *
+ * @module
+ */
 import {
   error as svelte_error,
   invalid as svelte_invalid,
@@ -33,19 +58,39 @@ import {
 
 type EffectSchema = Schema.Schema.Any;
 
+/**
+ * Single entry in a {@link Transport} table. Describes how to encode a value
+ * of type `T` to a wire payload and decode it back.
+ *
+ * @see https://ser.barekey.dev/content/reference/transport
+ */
 export interface Transporter<T = unknown, U = { value: unknown }> {
+  /** Restore the original value from the wire payload. */
   decode: (data: U) => T;
+  /**
+   * Encode the value to a wire payload, or return `false` when this transporter
+   * does not apply to the supplied value.
+   */
   encode: (value: T) => false | U;
 }
 
+/**
+ * Named collection of {@link Transporter}s, passed to devalue so custom types
+ * survive the client/server round-trip.
+ *
+ * @see https://ser.barekey.dev/content/reference/transport
+ */
 export type Transport = Record<string, Transporter>;
 
+/** Alias for SvelteKit's native remote-form input shape. */
 export type RemoteFormInput = SvelteKitRemoteFormInput;
 
+/** SvelteKit's native `query` function signature, re-exported for typing. */
 export type RemoteQueryFunction<Input, Output> = (
   arg: OptionalArgument<Input>,
 ) => Promise<Output>;
 
+/** SvelteKit's native `command` shape, re-exported for typing. */
 export type RemoteCommand<Input, Output> =
   & ((
     arg: OptionalArgument<Input>,
@@ -56,10 +101,12 @@ export type RemoteCommand<Input, Output> =
     readonly pending: number;
   };
 
+/** SvelteKit's native `prerender` function signature, re-exported for typing. */
 export type RemotePrerenderFunction<Input, Output> = (
   arg: OptionalArgument<Input>,
 ) => Promise<Output>;
 
+/** SvelteKit's native `form` shape, re-exported for typing. */
 export type RemoteForm<Input extends RemoteFormInput | void, Output> =
   SvelteKitRemoteForm<Input, Output>;
 
@@ -122,8 +169,16 @@ type FieldHelpers<FormShape, SchemaType> = FormShape extends
   }
   : Record<PropertyKey, never>;
 
+/**
+ * Proxy passed into `Form` handlers for reporting validation issues. Call
+ * `invalid.form(message)` for a top-level issue, or `invalid.<field>(message)`
+ * to attach the issue to a specific field declared in the schema.
+ *
+ * @see https://ser.barekey.dev/content/remote-functions/form
+ */
 export type Invalid<SchemaType = unknown> =
   & {
+    /** Attach a top-level form issue with the supplied message. */
     form: (
       message: string,
     ) => Effect.Effect<never, FormError<SchemaType>, never>;
@@ -133,6 +188,12 @@ export type Invalid<SchemaType = unknown> =
     SchemaType
   >;
 
+/**
+ * Shape of an Effect-returning remote `query`. Callable with the validated
+ * input; exposes the underlying SvelteKit function via `native`.
+ *
+ * @see https://ser.barekey.dev/content/remote-functions/query
+ */
 export type EffectQueryFunction<Input, Output, Error = never> =
   & ((
     arg: OptionalArgument<Input>,
@@ -142,9 +203,17 @@ export type EffectQueryFunction<Input, Output, Error = never> =
     never
   >)
   & {
+    /** Underlying SvelteKit `query` function, for fallback direct usage. */
     native: RemoteQueryFunction<Input, Output>;
   };
 
+/**
+ * Shape of an Effect-returning remote `command`. Callable with the validated
+ * input; exposes the underlying SvelteKit command via `native` and tracks
+ * in-flight submissions through `pending`.
+ *
+ * @see https://ser.barekey.dev/content/remote-functions/command
+ */
 export type EffectCommand<Input, Output, Error = never> =
   & ((
     arg: OptionalArgument<Input>,
@@ -154,10 +223,18 @@ export type EffectCommand<Input, Output, Error = never> =
     never
   >)
   & {
+    /** Underlying SvelteKit `command` function, for fallback direct usage. */
     native: RemoteCommand<Input, Output>;
+    /** Count of currently in-flight invocations of this command. */
     readonly pending: number;
   };
 
+/**
+ * Shape of an Effect-returning remote `prerender` function. Callable with the
+ * validated input; exposes the underlying SvelteKit function via `native`.
+ *
+ * @see https://ser.barekey.dev/content/remote-functions/prerender
+ */
 export type EffectPrerenderFunction<Input, Output, Error = never> =
   & ((
     arg: OptionalArgument<Input>,
@@ -167,15 +244,26 @@ export type EffectPrerenderFunction<Input, Output, Error = never> =
     never
   >)
   & {
+    /** Underlying SvelteKit `prerender` function, for fallback direct usage. */
     native: RemotePrerenderFunction<Input, Output>;
   };
 
+/**
+ * Shape of an Effect-returning remote `form`. Usable anywhere the native
+ * SvelteKit form is; additionally exposes `submit(data)` to run the form
+ * program as an Effect, and `for(...)` to clone the binding for a given
+ * input.
+ *
+ * @see https://ser.barekey.dev/content/remote-functions/form
+ */
 export type EffectForm<
   Input extends RemoteFormInput | void,
   Output,
   Error = never,
 > = RemoteForm<Input, Output> & {
+  /** Underlying SvelteKit `form` object, for fallback direct usage. */
   native: RemoteForm<Input, Output>;
+  /** Submit the form programmatically and receive the result as an Effect. */
   submit(
     data: OptionalArgument<Input>,
   ): Effect.Effect<
@@ -183,12 +271,17 @@ export type EffectForm<
     import("$internal/remote-shared.ts").RemoteFailure<Error>,
     never
   >;
+  /** Clone the form binding for a specific value - mirrors `RemoteForm.for`. */
   for: RemoteForm<Input, Output>["for"] extends
     (...args: infer Args) => infer Result
     ? (...args: Args) => EffectForm<Input, Output, Error>
     : never;
 };
 
+/**
+ * Type of the SvelteKit `RequestEvent` exposed through the {@link RequestEvent}
+ * Effect service.
+ */
 export type RequestEventService = ReturnType<typeof get_native_request_event>;
 
 /**
@@ -612,20 +705,30 @@ export function create_effect_transport<
   );
 }
 
+/**
+ * Overload set for the {@link Query} factory. Supports no-arg, `"unchecked"`,
+ * and Effect.Schema-validated definitions, plus `Query.batch(...)`.
+ *
+ * @see https://ser.barekey.dev/content/remote-functions/query
+ */
 export interface EffectQueryFactory {
+  /** Define a void-input query. */
   <Output, ErrorType, Requirements>(
     fn: () => Effect.Effect<Output, ErrorType, Requirements>,
   ): EffectQueryFunction<void, Output, ErrorType>;
+  /** Define a query that bypasses schema validation. */
   <Input, Output, ErrorType, Requirements>(
     validate: "unchecked",
     fn: (arg: Input) => Effect.Effect<Output, ErrorType, Requirements>,
   ): EffectQueryFunction<Input, Output, ErrorType>;
+  /** Define a query whose input is validated by an Effect.Schema. */
   <SchemaType extends EffectSchema, Output, ErrorType, Requirements>(
     validate: SchemaType,
     fn: (
       arg: SchemaOutput<SchemaType>,
     ) => Effect.Effect<Output, ErrorType, Requirements>,
   ): EffectQueryFunction<SchemaInput<SchemaType>, Output, ErrorType>;
+  /** Define a batched query - mirrors SvelteKit's `query.batch`. */
   batch: typeof query_batch_factory;
 }
 
@@ -790,14 +893,23 @@ const command_impl = (validate_or_fn: unknown, maybe_fn?: unknown): unknown => {
   return create_native_wrapper(native);
 };
 
+/**
+ * Overload set for the {@link Command} factory. Supports no-arg,
+ * `"unchecked"`, and Effect.Schema-validated definitions.
+ *
+ * @see https://ser.barekey.dev/content/remote-functions/command
+ */
 export interface EffectCommandFactory {
+  /** Define a void-input command. */
   <Output, ErrorType, Requirements>(
     fn: () => Effect.Effect<Output, ErrorType, Requirements>,
   ): EffectCommand<void, Output, ErrorType>;
+  /** Define a command that bypasses schema validation. */
   <Input, Output, ErrorType, Requirements>(
     validate: "unchecked",
     fn: (arg: Input) => Effect.Effect<Output, ErrorType, Requirements>,
   ): EffectCommand<Input, Output, ErrorType>;
+  /** Define a command whose input is validated by an Effect.Schema. */
   <SchemaType extends EffectSchema, Output, ErrorType, Requirements>(
     validate: SchemaType,
     fn: (
@@ -858,10 +970,18 @@ const form_impl = (validate_or_fn: unknown, maybe_fn?: unknown): unknown => {
   return create_native_wrapper(native);
 };
 
+/**
+ * Overload set for the {@link Form} factory. Supports no-arg, `"unchecked"`,
+ * and Effect.Schema-validated form handlers.
+ *
+ * @see https://ser.barekey.dev/content/remote-functions/form
+ */
 export interface EffectFormFactory {
+  /** Define a form handler with no input data. */
   <Output, ErrorType, Requirements>(
     fn: () => Effect.Effect<Output, ErrorType, Requirements>,
   ): EffectForm<void, Output, ErrorType>;
+  /** Define a form handler that bypasses schema validation. */
   <Input extends RemoteFormInput, Output, ErrorType, Requirements>(
     validate: "unchecked",
     fn: (
@@ -871,6 +991,7 @@ export interface EffectFormFactory {
       },
     ) => Effect.Effect<Output, ErrorType | FormError, Requirements>,
   ): EffectForm<Input, Output, ErrorType>;
+  /** Define a form handler whose submitted data is validated by a schema. */
   <SchemaType extends EffectSchema, Output, ErrorType, Requirements>(
     validate: SchemaType,
     fn: (
@@ -890,7 +1011,15 @@ export interface EffectFormFactory {
  */
 export const Form = form_impl as unknown as EffectFormFactory;
 
+/**
+ * Overload set for the {@link Prerender} factory. Accepts the same three
+ * validation flavours as the other factories, plus a SvelteKit `options` bag
+ * with `inputs` / `dynamic` flags.
+ *
+ * @see https://ser.barekey.dev/content/remote-functions/prerender
+ */
 export interface EffectPrerenderFactory {
+  /** Define a void-input prerender function. */
   <Output, ErrorType, Requirements>(
     fn: () => Effect.Effect<Output, ErrorType, Requirements>,
     options?: {
@@ -898,6 +1027,7 @@ export interface EffectPrerenderFactory {
       dynamic?: boolean;
     },
   ): EffectPrerenderFunction<void, Output, ErrorType>;
+  /** Define a prerender function that bypasses schema validation. */
   <Input, Output, ErrorType, Requirements>(
     validate: "unchecked",
     fn: (arg: Input) => Effect.Effect<Output, ErrorType, Requirements>,
@@ -906,6 +1036,7 @@ export interface EffectPrerenderFactory {
       dynamic?: boolean;
     },
   ): EffectPrerenderFunction<Input, Output, ErrorType>;
+  /** Define a prerender function whose input is validated by a schema. */
   <SchemaType extends EffectSchema, Output, ErrorType, Requirements>(
     validate: SchemaType,
     fn: (

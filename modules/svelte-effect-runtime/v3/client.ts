@@ -21,14 +21,32 @@ interface ProvideEffectRuntimeOptions {
   disposeOnDestroy?: boolean;
 }
 
+/**
+ * Minimal runtime abstraction the client adapters rely on. Implemented by the
+ * Effect `ManagedRuntime` returned from {@link ClientRuntime.make}, but
+ * callers may substitute their own object conforming to this shape.
+ *
+ * @see https://ser.barekey.dev/content/reference/client-runtime
+ */
 export interface EffectRuntime<R = unknown> {
+  /**
+   * Execute an Effect and receive a cancellation token. The optional `onExit`
+   * callback fires with the final `Exit` value once the fiber completes.
+   */
   runCallback<A, E, R2>(
     effect: Effect.Effect<A, E, R2>,
     options?: {
       onExit?: (exit: Exit.Exit<A, E>) => void;
     },
   ): () => void;
+  /**
+   * Execute an Effect and return a Promise that resolves with the success
+   * value or rejects with the propagated failure.
+   */
   runPromise<A, E, R2>(effect: Effect.Effect<A, E, R2>): Promise<A>;
+  /**
+   * Tear down the runtime and release any resources held by its root scope.
+   */
   dispose(): Promise<void>;
 }
 
@@ -42,6 +60,12 @@ export type {
   RemoteValidationError,
 } from "$internal/remote-shared.ts";
 
+/**
+ * Alias for {@link EffectRuntime} exposed as a stable service name used by
+ * generated code and documentation.
+ *
+ * @see https://ser.barekey.dev/content/reference/client-runtime
+ */
 export interface ClientRuntimeService extends EffectRuntime<unknown> {}
 
 type RuntimeSeedLayer<R> = Layer.Layer<R, never, R>;
