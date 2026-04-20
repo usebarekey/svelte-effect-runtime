@@ -12,6 +12,10 @@ import { Lightbulb } from "lucide-vue-next";
 Get started by downloading the NPM package.
 
 ```sh
+deno add jsr:svelte-effect-runtime
+```
+
+```sh
 deno add npm:svelte-effect-runtime
 ```
 
@@ -157,23 +161,3 @@ export const init = () => {
   );
 }
 ```
-
-<style>
-.ser-callout {
-  display: flex;
-  gap: 0.875rem;
-  align-items: center;
-  margin: 1.25rem 0;
-}
-
-.ser-callout__icon {
-  color: var(--vp-c-tip-1);
-  flex: 0 0 auto;
-}
-
-.ser-callout__text {
-  margin: 0;
-  line-height: 1.8;
-  text-wrap: pretty;
-}
-</style>

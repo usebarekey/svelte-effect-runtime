@@ -12,6 +12,7 @@ export default defineConfig({
         items: [
           { text: "Getting Started", link: "/" },
           { text: "Tooling", link: "/tooling" },
+          { text: "Best Practices", link: "/best-practices" },
         ],
       },
       {
