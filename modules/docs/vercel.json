@@ -1,3 +1,26 @@
 {
-  "outputDirectory": ".vitepress/dist"
+  "outputDirectory": ".vitepress/dist",
+  "functions": {
+    "api/docs.ts": {
+      "includeFiles": [
+        ".vitepress/dist/**/*.html",
+        "content/**/*.md",
+        "*.md"
+      ]
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*\\..*)",
+      "dest": "/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/docs"
+    }
+  ]
 }
