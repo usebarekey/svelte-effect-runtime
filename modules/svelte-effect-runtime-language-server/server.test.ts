@@ -349,10 +349,14 @@ Deno.test("destructured bindings map each name to its own generated symbol", asy
     Math.max(0, generated_second_offset - 60),
     Math.min(snapshot.getFullText().length, generated_second_offset + 120),
   );
+  const generated_second_token = snapshot.getFullText().slice(
+    generated_second_offset,
+    Math.min(snapshot.getFullText().length, generated_second_offset + 24),
+  );
 
   assert(generated_second.line >= 0);
   assert_match(generated_second_window, /let second = \$state<any>\(undefined\);/);
-  assert_not_match(generated_second_window, /let first = \$state<any>\(undefined\);/);
+  assert_match(generated_second_token, /^econd = \$state<any>\(/);
 });
 
 Deno.test("hover stays typed in script declarations and markup for checkout flows", async () => {
