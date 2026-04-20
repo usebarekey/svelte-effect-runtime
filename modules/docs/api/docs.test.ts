@@ -1,3 +1,4 @@
+import handler from "./docs.js";
 import { createDocsResponse, negotiateContentType } from "./_docs.js";
 
 function assertEquals<T>(actual: T, expected: T): void {
@@ -88,4 +89,43 @@ Deno.test("handles vercel-style relative request urls", async () => {
   );
   assertEquals(response.headers.get("vary"), "Accept");
   assertStringIncludes(await response.text(), "# Tooling");
+});
+
+Deno.test("writes negotiated responses to a node-style serverless response", async () => {
+  let endedBody: Uint8Array | null = null;
+  const headers: Record<
+    string,
+    string | number | readonly string[] | undefined
+  > = {};
+  const response = {
+    statusCode: 0,
+    setHeader(name: string, value: string | number | readonly string[]) {
+      headers[name] = value;
+    },
+    end(value?: Uint8Array | string) {
+      endedBody = typeof value === "string"
+        ? new TextEncoder().encode(value)
+        : value ?? null;
+    },
+  };
+
+  await handler(
+    {
+      method: "GET",
+      url: "/tooling",
+      headers: {
+        accept: "text/markdown",
+        "x-forwarded-host": "ser.barekey.dev",
+        "x-forwarded-proto": "https",
+      },
+    },
+    response,
+  );
+
+  assertEquals(headers["content-type"], "text/markdown; charset=utf-8");
+  assertEquals(headers["vary"], "Accept");
+  assertStringIncludes(
+    new TextDecoder().decode(endedBody ?? new Uint8Array()),
+    "# Tooling",
+  );
 });
